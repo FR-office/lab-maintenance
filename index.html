@@ -538,6 +538,8 @@ window.openDeviceModal = function(id) {
     document.getElementById('device-name').value = '';
     document.getElementById('device-location').value = '';
   }
+  const btn = document.querySelector('#device-modal .btn-primary');
+  btn.textContent = 'שמור'; btn.disabled = false;
   document.getElementById('device-modal').style.display = 'flex';
   setTimeout(() => document.getElementById('device-name').focus(), 100);
 };
@@ -597,6 +599,8 @@ window.openTaskModal = function(id) {
     document.getElementById('task-name-input').value = '';
     document.getElementById('task-instructions').value = '';
   }
+  const tbtn = document.querySelector('#task-modal .btn-primary');
+  tbtn.textContent = 'שמור'; tbtn.disabled = false;
   document.getElementById('task-modal').style.display = 'flex';
   setTimeout(() => document.getElementById('task-name-input').focus(), 100);
 };
