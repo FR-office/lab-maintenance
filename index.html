@@ -219,8 +219,8 @@ const app = initializeApp(firebaseConfig);
 const db = getDatabase(app);
 
 // Expose to global scope so regular scripts can use Firebase
-window._fbSet = (path, data) => set(ref(db, path), data);
-window._fbListen = (path, cb) => onValue(ref(db, path), snap => cb(snap.val()));
+window._fbSet = (path, data) => set(ref(db, 'lab_fert_2024/' + path), data);
+window._fbListen = (path, cb) => onValue(ref(db, 'lab_fert_2024/' + path), snap => cb(snap.val()));
 // Signal that Firebase is ready
 window.dispatchEvent(new Event('firebase-ready'));
 </script>
