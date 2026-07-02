@@ -1,0 +1,712 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>תחזוקת מעבדה</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Heebo:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Heebo',sans-serif;background:#f5f5f3;color:#1a1a1a;min-height:100vh;direction:rtl}
+.topbar{background:#fff;border-bottom:1px solid #e8e8e5;padding:0 24px;display:flex;align-items:center;justify-content:space-between;height:56px;position:sticky;top:0;z-index:10}
+.topbar-title{font-size:17px;font-weight:600;display:flex;align-items:center;gap:8px}
+.topbar-right{display:flex;align-items:center;gap:10px}
+.week-badge{font-size:12px;color:#666;background:#f0f0ee;padding:4px 10px;border-radius:20px;border:1px solid #e0e0dc}
+.btn-export{font-size:13px;padding:6px 14px;cursor:pointer;border:1px solid #d0d0cc;border-radius:8px;background:#fff;color:#1a1a1a;display:flex;align-items:center;gap:6px;font-family:'Heebo',sans-serif}
+.btn-export:hover{background:#f5f5f3}
+.container{max-width:720px;margin:0 auto;padding:24px 16px}
+.tabs{display:flex;gap:2px;margin-bottom:20px;background:#fff;border:1px solid #e8e8e5;border-radius:10px;padding:4px}
+.tab{flex:1;font-size:14px;padding:8px 12px;cursor:pointer;border:none;background:transparent;color:#666;border-radius:7px;font-family:'Heebo',sans-serif;font-weight:500;transition:all 0.15s}
+.tab.active{background:#1a1a1a;color:#fff}
+.tab:hover:not(.active){background:#f0f0ee;color:#1a1a1a}
+.summary-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:20px}
+.stat{background:#fff;border:1px solid #e8e8e5;border-radius:10px;padding:14px 16px}
+.stat-num{font-size:26px;font-weight:600;line-height:1}
+.stat-label{font-size:12px;color:#888;margin-top:4px}
+.stat.danger .stat-num{color:#c0392b}
+.stat.success .stat-num{color:#27ae60}
+.section-header{font-size:11px;font-weight:600;color:#888;text-transform:uppercase;letter-spacing:0.06em;margin:18px 0 10px}
+.task-card{background:#fff;border:1px solid #e8e8e5;border-radius:10px;padding:14px 16px;margin-bottom:8px;display:flex;align-items:flex-start;gap:12px}
+.task-card.done{opacity:0.5}
+.task-card.overdue{border-color:#e74c3c;background:#fdf5f5}
+.task-left{flex:1;min-width:0}
+.task-name{font-size:15px;font-weight:500;margin-bottom:4px}
+.task-meta{font-size:12px;color:#888;display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.badge{display:inline-block;font-size:11px;padding:2px 8px;border-radius:12px;font-weight:500}
+.badge-device{background:#e1f5ee;color:#0f6e56}
+.badge-type{background:#eeedfe;color:#3c3489}
+.badge-done{background:#eaf3de;color:#3b6d11}
+.badge-overdue{background:#fde8e8;color:#c0392b}
+.done-info{font-size:12px;color:#888;margin-top:5px}
+.task-instructions{font-size:12px;color:#888;margin-top:5px;font-style:italic}
+.task-actions{display:flex;gap:6px;flex-shrink:0}
+.btn-action{font-size:13px;padding:7px 14px;cursor:pointer;border:1px solid #d0d0cc;border-radius:8px;background:#fff;color:#1a1a1a;white-space:nowrap;font-family:'Heebo',sans-serif;transition:all 0.15s}
+.btn-action:hover{background:#f5f5f3}
+.btn-action.muted{color:#888;font-size:12px;border-color:transparent}
+.btn-action.muted:hover{background:#f5f5f3;border-color:#d0d0cc}
+.btn-action.danger{color:#c0392b;border-color:transparent}
+.btn-action.danger:hover{background:#fde8e8;border-color:#e74c3c}
+.empty{text-align:center;padding:40px 16px;color:#888;font-size:14px}
+.empty-icon{font-size:36px;margin-bottom:10px}
+.filter-row{display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap}
+.filter-row select{font-size:13px;padding:7px 10px;border:1px solid #d0d0cc;border-radius:8px;background:#fff;color:#1a1a1a;font-family:'Heebo',sans-serif}
+.history-row{display:flex;justify-content:space-between;align-items:flex-start;padding:12px 0;border-bottom:1px solid #f0f0ee}
+.history-row:last-child{border-bottom:none}
+.history-name{font-size:14px;font-weight:500}
+.history-meta{font-size:12px;color:#888;margin-top:3px}
+.manage-section{margin-bottom:24px}
+.add-btn{display:flex;align-items:center;justify-content:center;gap:6px;font-size:14px;padding:10px 16px;cursor:pointer;border:1.5px dashed #c0c0bc;border-radius:10px;background:transparent;color:#888;width:100%;margin-top:8px;font-family:'Heebo',sans-serif;transition:all 0.15s}
+.add-btn:hover{background:#fff;color:#1a1a1a;border-color:#888}
+.modal-backdrop{position:fixed;inset:0;background:rgba(0,0,0,0.4);display:flex;align-items:center;justify-content:center;z-index:100;padding:16px}
+.modal{background:#fff;border-radius:14px;padding:24px;width:100%;max-width:400px;max-height:90vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,0.15)}
+.modal h2{font-size:18px;font-weight:600;margin-bottom:16px}
+.modal-task-info{font-size:14px;color:#666;margin-bottom:16px;padding:10px 14px;background:#f5f5f3;border-radius:8px}
+.form-group{margin-bottom:14px}
+.form-group label{font-size:13px;color:#666;display:block;margin-bottom:5px;font-weight:500}
+.form-group input,.form-group select,.form-group textarea{width:100%;font-size:14px;padding:9px 12px;border:1px solid #d0d0cc;border-radius:8px;background:#fff;color:#1a1a1a;font-family:'Heebo',sans-serif}
+.form-group input:focus,.form-group select:focus,.form-group textarea:focus{outline:none;border-color:#1a1a1a}
+.form-group textarea{resize:vertical;min-height:70px}
+.modal-btns{display:flex;justify-content:flex-end;gap:8px;margin-top:18px}
+.btn-primary{padding:9px 20px;font-size:14px;cursor:pointer;border:none;border-radius:8px;background:#1a1a1a;color:#fff;font-family:'Heebo',sans-serif;font-weight:500}
+.btn-primary:hover{background:#333}
+.btn-secondary{padding:9px 20px;font-size:14px;cursor:pointer;border:1px solid #d0d0cc;border-radius:8px;background:#fff;color:#1a1a1a;font-family:'Heebo',sans-serif}
+.btn-secondary:hover{background:#f5f5f3}
+.export-options{display:flex;flex-direction:column;gap:10px;margin-bottom:18px}
+.export-option{display:flex;align-items:center;gap:10px;font-size:14px;cursor:pointer;padding:10px 12px;border:1px solid #e8e8e5;border-radius:8px}
+.export-option:hover{background:#f5f5f3}
+.export-option input{width:16px;height:16px;cursor:pointer}
+.toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#1a1a1a;color:#fff;padding:10px 20px;border-radius:10px;font-size:14px;opacity:0;transition:opacity 0.3s;z-index:200;pointer-events:none;font-family:'Heebo',sans-serif;white-space:nowrap}
+.toast.show{opacity:1}
+.loading{text-align:center;padding:40px;color:#888;font-size:14px}
+.spinner{width:28px;height:28px;border:3px solid #e8e8e5;border-top-color:#1a1a1a;border-radius:50%;animation:spin 0.7s linear infinite;margin:0 auto 12px}
+@keyframes spin{to{transform:rotate(360deg)}}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="topbar-title">🧪 תחזוקת מעבדה</div>
+  <div class="topbar-right">
+    <span class="week-badge" id="week-label"></span>
+    <button class="btn-export" onclick="showExportModal()">📥 גיבוי CSV</button>
+  </div>
+</div>
+
+<div class="container">
+  <div class="tabs">
+    <button class="tab active" onclick="showTab('this-week')">השבוע</button>
+    <button class="tab" onclick="showTab('all-tasks')">כל המשימות</button>
+    <button class="tab" onclick="showTab('history')">היסטוריה</button>
+    <button class="tab" onclick="showTab('manage')">ניהול</button>
+  </div>
+
+  <div id="tab-this-week">
+    <div class="loading"><div class="spinner"></div>טוען נתונים...</div>
+  </div>
+  <div id="tab-all-tasks" style="display:none">
+    <div class="filter-row">
+      <select id="filter-device" onchange="renderAllTasks()"><option value="">כל המכשירים</option></select>
+      <select id="filter-type" onchange="renderAllTasks()"><option value="">כל הסוגים</option></select>
+    </div>
+    <div id="all-tasks-list"></div>
+  </div>
+  <div id="tab-history" style="display:none"><div id="history-list"></div></div>
+  <div id="tab-manage" style="display:none">
+    <div class="manage-section">
+      <p class="section-header">מכשירים</p>
+      <div id="devices-list"></div>
+      <button class="add-btn" onclick="openDeviceModal()">+ הוסף מכשיר</button>
+    </div>
+    <div class="manage-section">
+      <p class="section-header">משימות תחזוקה</p>
+      <div id="tasks-manage-list"></div>
+      <button class="add-btn" onclick="openTaskModal()">+ הוסף משימה</button>
+    </div>
+  </div>
+</div>
+
+<!-- Done modal -->
+<div id="done-modal" class="modal-backdrop" style="display:none">
+  <div class="modal">
+    <h2>סיום תחזוקה</h2>
+    <div class="modal-task-info" id="done-task-info"></div>
+    <div class="form-group"><label>שם מבצע</label><input type="text" id="done-worker" placeholder="שם העובד"></div>
+    <div class="form-group"><label>הערות (אופציונלי)</label><textarea id="done-notes" placeholder="הערות לגבי הביצוע..."></textarea></div>
+    <div class="modal-btns">
+      <button class="btn-secondary" onclick="closeAllModals()">ביטול</button>
+      <button class="btn-primary" onclick="confirmDone()">✓ אישור ביצוע</button>
+    </div>
+  </div>
+</div>
+
+<!-- Device modal -->
+<div id="device-modal" class="modal-backdrop" style="display:none">
+  <div class="modal">
+    <h2 id="device-modal-title">הוסף מכשיר</h2>
+    <div class="form-group"><label>שם מכשיר</label><input type="text" id="device-name" placeholder="לדוג׳: pH Meter, Centrifuge..."></div>
+    <div class="form-group"><label>מיקום (אופציונלי)</label><input type="text" id="device-location" placeholder="לדוג׳: עמדה 3, חדר 2..."></div>
+    <div class="modal-btns">
+      <button class="btn-secondary" onclick="closeAllModals()">ביטול</button>
+      <button class="btn-primary" onclick="saveDevice()">שמור</button>
+    </div>
+  </div>
+</div>
+
+<!-- Task modal -->
+<div id="task-modal" class="modal-backdrop" style="display:none">
+  <div class="modal">
+    <h2 id="task-modal-title">הוסף משימה</h2>
+    <div class="form-group"><label>שם המשימה</label><input type="text" id="task-name-input" placeholder="לדוג׳: ניקוי פילטר..."></div>
+    <div class="form-group"><label>מכשיר</label><select id="task-device-select"></select></div>
+    <div class="form-group"><label>סוג פעולה</label>
+      <select id="task-type-select">
+        <option>ניקוי</option><option>כיול</option><option>בדיקה</option>
+        <option>החלפת חומר</option><option>שמן / סיכה</option><option>עדכון תוכנה</option><option>אחר</option>
+      </select>
+    </div>
+    <div class="form-group"><label>תדירות</label>
+      <select id="task-freq-select">
+        <option value="1">כל שבוע</option>
+        <option value="2">כל שבועיים</option>
+        <option value="4">כל חודש (~4 שב׳)</option>
+        <option value="8">כל חודשיים (~8 שב׳)</option>
+        <option value="13">כל רבעון (~13 שב׳)</option>
+      </select>
+    </div>
+    <div class="form-group"><label>הוראות ביצוע (אופציונלי)</label><textarea id="task-instructions" placeholder="שלבים, חומרים נדרשים..."></textarea></div>
+    <div class="modal-btns">
+      <button class="btn-secondary" onclick="closeAllModals()">ביטול</button>
+      <button class="btn-primary" onclick="saveTask()">שמור</button>
+    </div>
+  </div>
+</div>
+
+<!-- Export modal -->
+<div id="export-modal" class="modal-backdrop" style="display:none">
+  <div class="modal">
+    <h2>גיבוי נתונים</h2>
+    <p style="font-size:14px;color:#666;margin-bottom:16px">בחרי מה לייצא לקובץ CSV:</p>
+    <div class="export-options">
+      <label class="export-option"><input type="checkbox" id="exp-tasks" checked> רשימת כל המשימות</label>
+      <label class="export-option"><input type="checkbox" id="exp-history" checked> היסטוריית ביצועים</label>
+      <label class="export-option"><input type="checkbox" id="exp-status"> מצב נוכחי (בוצע / ממתין)</label>
+    </div>
+    <div class="modal-btns">
+      <button class="btn-secondary" onclick="closeAllModals()">ביטול</button>
+      <button class="btn-primary" onclick="doExport()">📥 ייצא CSV</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast" class="toast"></div>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+import { getDatabase, ref, set, onValue } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyCQw3OPGk98VXVZQrns68Sfs6OPksK480U",
+  authDomain: "lab-maintenance-e181d.firebaseapp.com",
+  databaseURL: "https://lab-maintenance-e181d-default-rtdb.firebaseio.com",
+  projectId: "lab-maintenance-e181d",
+  storageBucket: "lab-maintenance-e181d.firebasestorage.app",
+  messagingSenderId: "1096049267270",
+  appId: "1:1096049267270:web:5a5c205964434ec8a67047"
+};
+
+const app = initializeApp(firebaseConfig);
+const db = getDatabase(app);
+
+// Expose to global scope so regular scripts can use Firebase
+window._fbSet = (path, data) => set(ref(db, path), data);
+window._fbListen = (path, cb) => onValue(ref(db, path), snap => cb(snap.val()));
+// Signal that Firebase is ready
+window.dispatchEvent(new Event('firebase-ready'));
+</script>
+
+<script>
+
+let state = {devices:[], tasks:[], completions:{}};
+let historyLog = [];
+let pendingDoneTaskId = null;
+let editingDeviceId = null;
+let editingTaskId = null;
+let currentTab = 'this-week';
+
+// ── Utils ──
+function getWeekKey(d) {
+  const date = new Date(d || Date.now());
+  const day = date.getDay();
+  const diff = date.getDate() - day + (day === 0 ? -6 : 1);
+  const mon = new Date(date.setDate(diff));
+  return mon.toISOString().slice(0, 10);
+}
+function getWeekNum() {
+  const d = new Date();
+  const start = new Date(d.getFullYear(), 0, 1);
+  return { week: Math.ceil(((d - start) / 86400000 + start.getDay() + 1) / 7), year: d.getFullYear() };
+}
+function weeksDiff(w1, w2) {
+  return Math.round((new Date(w2) - new Date(w1)) / (7 * 86400000));
+}
+function isDue(task) {
+  const last = state.completions[task.id];
+  if (!last) return true;
+  // Calculate from actual completion date (not week start) for early completions
+  const daysSince = (Date.now() - new Date(last.date)) / 86400000;
+  return daysSince >= task.freq * 7;
+}
+function isDoneThisWeek(task) {
+  // "done recently" = completed within the last 7 days (for weekly) or within current cycle
+  const last = state.completions[task.id];
+  if (!last) return false;
+  const daysSince = (Date.now() - new Date(last.date)) / 86400000;
+  return daysSince < task.freq * 7;
+}
+function isOverdue(task) {
+  const last = state.completions[task.id];
+  if (!last) return false;
+  const daysSince = (Date.now() - new Date(last.date)) / 86400000;
+  // Overdue = more than 1 extra cycle has passed
+  return daysSince > task.freq * 7 * 1.5;
+}
+function nextDueDate(task) {
+  const last = state.completions[task.id];
+  if (!last) return null;
+  const d = new Date(last.date);
+  d.setDate(d.getDate() + task.freq * 7);
+  return d;
+}
+function freqLabel(f) {
+  return f===1?'שבועי':f===2?'דו-שבועי':f===4?'חודשי':f===8?'חודשיים':`כל ${f} שב'`;
+}
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 2500);
+}
+function closeAllModals() {
+  document.querySelectorAll('.modal-backdrop').forEach(m => m.style.display = 'none');
+}
+
+// ── Firebase ──
+async function saveState() {
+  try {
+    await window._fbSet('state', state);
+  } catch(e) {
+    console.error('saveState error:', e);
+    throw e;
+  }
+}
+async function saveHistory() {
+  try {
+    await window._fbSet('history', historyLog);
+  } catch(e) {
+    console.error('saveHistory error:', e);
+    throw e;
+  }
+}
+
+function initFirebase() {
+  window._fbListen('state', val => {
+    if (val) {
+      state = val;
+      if (!state.devices) state.devices = [];
+      if (!state.tasks) state.tasks = [];
+      if (!state.completions) state.completions = {};
+    }
+    renderAll();
+  });
+  window._fbListen('history', val => {
+    historyLog = val || [];
+    if (currentTab === 'history') renderHistory();
+  });
+}
+
+// ── Render ──
+function renderAll() {
+  renderWeekLabel();
+  renderThisWeek();
+  if (currentTab === 'all-tasks') renderAllTasks();
+  if (currentTab === 'history') renderHistory();
+  if (currentTab === 'manage') renderManage();
+}
+
+function renderWeekLabel() {
+  const { week, year } = getWeekNum();
+  document.getElementById('week-label').textContent = `שבוע ${week}, ${year}`;
+}
+
+function renderThisWeek() {
+  const due = state.tasks.filter(t => isDue(t));
+  const doneThis = due.filter(t => isDoneThisWeek(t));
+  const pending = due.filter(t => !isDoneThisWeek(t));
+  const overdue = state.tasks.filter(t => isOverdue(t));
+
+  let html = `<div class="summary-grid">
+    <div class="stat ${pending.length > 0 ? 'danger' : 'success'}">
+      <div class="stat-num">${pending.length}</div><div class="stat-label">ממתינות</div>
+    </div>
+    <div class="stat success">
+      <div class="stat-num">${doneThis.length}</div><div class="stat-label">בוצעו השבוע</div>
+    </div>
+    <div class="stat ${overdue.length > 0 ? 'danger' : ''}">
+      <div class="stat-num">${overdue.length}</div><div class="stat-label">באיחור</div>
+    </div>
+  </div>`;
+
+  if (pending.length > 0) {
+    html += `<p class="section-header">לביצוע השבוע</p>`;
+    pending.forEach(t => html += taskCardHTML(t, false, isOverdue(t)));
+  }
+  if (doneThis.length > 0) {
+    html += `<p class="section-header">בוצעו השבוע</p>`;
+    doneThis.forEach(t => html += taskCardHTML(t, true, false));
+  }
+  if (!pending.length && !doneThis.length) {
+    html += `<div class="empty"><div class="empty-icon">✅</div>אין משימות לשבוע זה</div>`;
+  }
+  document.getElementById('tab-this-week').innerHTML = html;
+}
+
+function taskCardHTML(t, done, overdue) {
+  const dev = state.devices.find(d => d.id === t.deviceId);
+  const comp = state.completions[t.id];
+  return `<div class="task-card ${done ? 'done' : ''} ${overdue ? 'overdue' : ''}">
+    <div class="task-left">
+      <div class="task-name">${t.name}</div>
+      <div class="task-meta">
+        ${dev ? `<span class="badge badge-device">${dev.name}</span>` : ''}
+        <span class="badge badge-type">${t.type}</span>
+        <span style="color:#aaa">${freqLabel(t.freq)}</span>
+        ${overdue ? `<span class="badge badge-overdue">באיחור</span>` : ''}
+        ${done ? `<span class="badge badge-done">✓ בוצע</span>` : ''}
+      </div>
+      ${done && comp ? `<div class="done-info">👤 ${comp.worker}${comp.notes ? ' · ' + comp.notes : ''}</div>` : ''}
+      ${done ? (() => { const nd = nextDueDate(t); return nd ? `<div class="done-info">📅 ביצוע הבא: ${nd.toLocaleDateString('he-IL')}</div>` : ''; })() : ''}
+      ${t.instructions ? `<div class="task-instructions">${t.instructions}</div>` : ''}
+    </div>
+    <div class="task-actions">
+      ${done
+        ? `<button class="btn-action muted" onclick="undoTask('${t.id}')">↩ בטל</button>`
+        : `<button class="btn-action" onclick="startDone('${t.id}')">✓ בוצע</button>`
+      }
+    </div>
+  </div>`;
+}
+
+function renderAllTasks() {
+  const devSel = document.getElementById('filter-device');
+  const typeSel = document.getElementById('filter-type');
+  const curDev = devSel.value, curType = typeSel.value;
+  const types = [...new Set(state.tasks.map(t => t.type))];
+  devSel.innerHTML = '<option value="">כל המכשירים</option>' + state.devices.map(d => `<option value="${d.id}"${curDev===d.id?' selected':''}>${d.name}</option>`).join('');
+  typeSel.innerHTML = '<option value="">כל הסוגים</option>' + types.map(ty => `<option value="${ty}"${curType===ty?' selected':''}>${ty}</option>`).join('');
+  let filtered = state.tasks;
+  if (curDev) filtered = filtered.filter(t => t.deviceId === curDev);
+  if (curType) filtered = filtered.filter(t => t.type === curType);
+  const html = filtered.map(t => taskCardHTML(t, isDoneThisWeek(t), isOverdue(t))).join('') || `<div class="empty">אין משימות</div>`;
+  document.getElementById('all-tasks-list').innerHTML = html;
+}
+
+function renderHistory() {
+  const arr = Array.isArray(historyLog) ? historyLog : Object.values(historyLog || {});
+  const sorted = [...arr].sort((a, b) => new Date(b.date) - new Date(a.date));
+  let html = '';
+  if (!sorted.length) {
+    html = `<div class="empty"><div class="empty-icon">📋</div>אין היסטוריה עדיין</div>`;
+  } else {
+    sorted.slice(0, 80).forEach(h => {
+      const task = state.tasks.find(t => t.id === h.taskId);
+      const dev = state.devices.find(d => d.id === task?.deviceId);
+      html += `<div class="history-row">
+        <div>
+          <div class="history-name">${task?.name || h.taskName || 'משימה'}</div>
+          <div class="history-meta">${dev ? dev.name + ' · ' : ''}👤 ${h.worker}${h.notes ? ' · ' + h.notes : ''}</div>
+        </div>
+        <div style="font-size:12px;color:#888;text-align:left">${new Date(h.date).toLocaleDateString('he-IL')}</div>
+      </div>`;
+    });
+  }
+  document.getElementById('history-list').innerHTML = html;
+}
+
+function renderManage() {
+  const dhtml = state.devices.map(d => `
+    <div class="task-card" style="align-items:center">
+      <div class="task-left">
+        <div class="task-name">${d.name}</div>
+        ${d.location ? `<div style="font-size:12px;color:#888">${d.location}</div>` : ''}
+      </div>
+      <div class="task-actions">
+        <button class="btn-action" onclick="openDeviceModal('${d.id}')">✏️ ערוך</button>
+        <button class="btn-action danger" onclick="deleteDevice('${d.id}')">🗑</button>
+      </div>
+    </div>`).join('') || `<div class="empty" style="padding:16px 0">אין מכשירים — הוסף למטה</div>`;
+  document.getElementById('devices-list').innerHTML = dhtml;
+
+  const thtml = state.tasks.map(t => {
+    const dev = state.devices.find(d => d.id === t.deviceId);
+    return `<div class="task-card" style="align-items:center">
+      <div class="task-left">
+        <div class="task-name">${t.name}</div>
+        <div class="task-meta">
+          ${dev ? `<span class="badge badge-device">${dev.name}</span>` : ''}
+          <span class="badge badge-type">${t.type}</span>
+          <span style="color:#aaa">${freqLabel(t.freq)}</span>
+        </div>
+        ${t.instructions ? `<div class="task-instructions">${t.instructions}</div>` : ''}
+      </div>
+      <div class="task-actions">
+        <button class="btn-action" onclick="openTaskModal('${t.id}')">✏️ ערוך</button>
+        <button class="btn-action danger" onclick="deleteTask('${t.id}')">🗑</button>
+      </div>
+    </div>`;
+  }).join('') || `<div class="empty" style="padding:16px 0">אין משימות — הוסף למטה</div>`;
+  document.getElementById('tasks-manage-list').innerHTML = thtml;
+}
+
+// ── Actions ──
+window.showTab = function(tab) {
+  currentTab = tab;
+  ['this-week','all-tasks','history','manage'].forEach(t => {
+    document.getElementById('tab-'+t).style.display = t === tab ? 'block' : 'none';
+  });
+  document.querySelectorAll('.tab').forEach((el, i) => {
+    el.classList.toggle('active', ['this-week','all-tasks','history','manage'][i] === tab);
+  });
+  if (tab === 'all-tasks') renderAllTasks();
+  if (tab === 'history') renderHistory();
+  if (tab === 'manage') renderManage();
+};
+
+window.startDone = function(taskId) {
+  pendingDoneTaskId = taskId;
+  const t = state.tasks.find(x => x.id === taskId);
+  const dev = state.devices.find(d => d.id === t?.deviceId);
+  document.getElementById('done-task-info').innerHTML = `<strong>${t?.name}</strong>${dev ? ' — ' + dev.name : ''}`;
+  document.getElementById('done-worker').value = '';
+  document.getElementById('done-notes').value = '';
+  document.getElementById('done-modal').style.display = 'flex';
+  setTimeout(() => document.getElementById('done-worker').focus(), 100);
+};
+
+window.confirmDone = async function() {
+  const worker = document.getElementById('done-worker').value.trim();
+  if (!worker) { alert('נא להזין שם עובד'); return; }
+  const btn = document.querySelector('#done-modal .btn-primary');
+  btn.textContent = 'שומר...'; btn.disabled = true;
+  try {
+    const notes = document.getElementById('done-notes').value.trim();
+    const now = new Date().toISOString();
+    if (!state.completions) state.completions = {};
+    // Store actual timestamp — next due date calculated from this
+    state.completions[pendingDoneTaskId] = { weekKey: getWeekKey(), worker, notes, date: now };
+    const task = state.tasks.find(t => t.id === pendingDoneTaskId);
+    const nd = nextDueDate(task);
+    const entry = { taskId: pendingDoneTaskId, taskName: task?.name, worker, notes, date: now, weekKey: getWeekKey() };
+    if (!Array.isArray(historyLog)) historyLog = Object.values(historyLog || {});
+    historyLog.push(entry);
+    await saveState();
+    await saveHistory();
+    closeAllModals();
+    const nextMsg = nd ? ` — ביצוע הבא: ${nd.toLocaleDateString('he-IL')}` : '';
+    showToast('✓ תחזוקה נרשמה' + nextMsg);
+  } catch(e) {
+    alert('שגיאה בשמירה — בדקי חיבור לאינטרנט ונסי שוב');
+    btn.textContent = '✓ אישור ביצוע'; btn.disabled = false;
+  }
+};
+
+window.undoTask = async function(taskId) {
+  if (!confirm('לבטל את סימון הביצוע?')) return;
+  delete state.completions[taskId];
+  await saveState();
+  showToast('סימון בוטל');
+};
+
+window.openDeviceModal = function(id) {
+  editingDeviceId = id || null;
+  if (id) {
+    const d = state.devices.find(x => x.id === id);
+    document.getElementById('device-modal-title').textContent = 'ערוך מכשיר';
+    document.getElementById('device-name').value = d.name;
+    document.getElementById('device-location').value = d.location || '';
+  } else {
+    document.getElementById('device-modal-title').textContent = 'הוסף מכשיר';
+    document.getElementById('device-name').value = '';
+    document.getElementById('device-location').value = '';
+  }
+  document.getElementById('device-modal').style.display = 'flex';
+  setTimeout(() => document.getElementById('device-name').focus(), 100);
+};
+
+window.saveDevice = async function() {
+  const name = document.getElementById('device-name').value.trim();
+  if (!name) { alert('נא להזין שם מכשיר'); return; }
+  const loc = document.getElementById('device-location').value.trim();
+  const btn = document.querySelector('#device-modal .btn-primary');
+  btn.textContent = 'שומר...'; btn.disabled = true;
+  try {
+    if (editingDeviceId) {
+      const d = state.devices.find(x => x.id === editingDeviceId);
+      d.name = name; d.location = loc;
+    } else {
+      state.devices.push({ id: 'd' + Date.now(), name, location: loc });
+    }
+    await saveState();
+    closeAllModals();
+    showToast(editingDeviceId ? '✓ מכשיר עודכן' : '✓ מכשיר נוסף');
+  } catch(e) {
+    alert('שגיאה בשמירה — בדקי חיבור לאינטרנט ונסי שוב');
+    btn.textContent = 'שמור'; btn.disabled = false;
+  }
+};
+
+window.deleteDevice = async function(id) {
+  const dev = state.devices.find(d => d.id === id);
+  const count = state.tasks.filter(t => t.deviceId === id).length;
+  const msg = count > 0 ? `למחוק את "${dev?.name}" ו-${count} המשימות שלו?` : `למחוק את "${dev?.name}"?`;
+  if (!confirm(msg)) return;
+  try {
+    state.devices = state.devices.filter(d => d.id !== id);
+    state.tasks = state.tasks.filter(t => t.deviceId !== id);
+    await saveState();
+    showToast('✓ מכשיר נמחק');
+  } catch(e) {
+    alert('שגיאה במחיקה — בדקי חיבור לאינטרנט ונסי שוב');
+  }
+};
+
+window.openTaskModal = function(id) {
+  editingTaskId = id || null;
+  const sel = document.getElementById('task-device-select');
+  sel.innerHTML = state.devices.map(d => `<option value="${d.id}">${d.name}</option>`).join('');
+  if (!state.devices.length) { alert('הוסף מכשיר קודם'); return; }
+  if (id) {
+    const t = state.tasks.find(x => x.id === id);
+    document.getElementById('task-modal-title').textContent = 'ערוך משימה';
+    document.getElementById('task-name-input').value = t.name;
+    sel.value = t.deviceId;
+    document.getElementById('task-type-select').value = t.type;
+    document.getElementById('task-freq-select').value = t.freq;
+    document.getElementById('task-instructions').value = t.instructions || '';
+  } else {
+    document.getElementById('task-modal-title').textContent = 'הוסף משימה';
+    document.getElementById('task-name-input').value = '';
+    document.getElementById('task-instructions').value = '';
+  }
+  document.getElementById('task-modal').style.display = 'flex';
+  setTimeout(() => document.getElementById('task-name-input').focus(), 100);
+};
+
+window.saveTask = async function() {
+  const name = document.getElementById('task-name-input').value.trim();
+  if (!name) { alert('נא להזין שם משימה'); return; }
+  const btn = document.querySelector('#task-modal .btn-primary');
+  btn.textContent = 'שומר...'; btn.disabled = true;
+  try {
+    const data = {
+      name,
+      deviceId: document.getElementById('task-device-select').value,
+      type: document.getElementById('task-type-select').value,
+      freq: parseInt(document.getElementById('task-freq-select').value),
+      instructions: document.getElementById('task-instructions').value.trim()
+    };
+    if (editingTaskId) {
+      Object.assign(state.tasks.find(x => x.id === editingTaskId), data);
+    } else {
+      state.tasks.push({ id: 't' + Date.now(), ...data });
+    }
+    await saveState();
+    closeAllModals();
+    showToast(editingTaskId ? '✓ משימה עודכנה' : '✓ משימה נוספה');
+  } catch(e) {
+    alert('שגיאה בשמירה — בדקי חיבור לאינטרנט ונסי שוב');
+    btn.textContent = 'שמור'; btn.disabled = false;
+  }
+};
+
+window.deleteTask = async function(id) {
+  const t = state.tasks.find(x => x.id === id);
+  if (!confirm(`למחוק את "${t?.name}"?`)) return;
+  try {
+    state.tasks = state.tasks.filter(x => x.id !== id);
+    delete state.completions[id];
+    await saveState();
+    showToast('✓ משימה נמחקה');
+  } catch(e) {
+    alert('שגיאה במחיקה — בדקי חיבור לאינטרנט ונסי שוב');
+  }
+};
+
+window.showExportModal = function() {
+  document.getElementById('export-modal').style.display = 'flex';
+};
+
+window.closeAllModals = closeAllModals;
+
+window.doExport = function() {
+  const expTasks = document.getElementById('exp-tasks').checked;
+  const expHistory = document.getElementById('exp-history').checked;
+  const expStatus = document.getElementById('exp-status').checked;
+  const BOM = '\uFEFF';
+  let parts = [];
+
+  if (expTasks) {
+    let rows = [['שם משימה','מכשיר','מיקום','סוג פעולה','תדירות (שבועות)','הוראות']];
+    state.tasks.forEach(t => {
+      const dev = state.devices.find(d => d.id === t.deviceId);
+      rows.push([t.name, dev?.name||'', dev?.location||'', t.type, t.freq, t.instructions||'']);
+    });
+    parts.push('## רשימת משימות\n' + rows.map(r => r.map(c => `"${String(c).replace(/"/g,'""')}"`).join(',')).join('\n'));
+  }
+  if (expHistory) {
+    const arr = Array.isArray(historyLog) ? historyLog : Object.values(historyLog || {});
+    let rows = [['תאריך','שם משימה','מכשיר','עובד','הערות']];
+    [...arr].sort((a,b)=>new Date(b.date)-new Date(a.date)).forEach(h => {
+      const task = state.tasks.find(t => t.id === h.taskId);
+      const dev = state.devices.find(d => d.id === task?.deviceId);
+      rows.push([new Date(h.date).toLocaleDateString('he-IL'), task?.name||h.taskName||'', dev?.name||'', h.worker, h.notes||'']);
+    });
+    parts.push('\n## היסטוריית ביצועים\n' + rows.map(r => r.map(c => `"${String(c).replace(/"/g,'""')}"`).join(',')).join('\n'));
+  }
+  if (expStatus) {
+    const wk = getWeekKey();
+    let rows = [['שם משימה','מכשיר','סוג','תדירות','בוצע השבוע','תאריך ביצוע אחרון','מבצע אחרון']];
+    state.tasks.forEach(t => {
+      const dev = state.devices.find(d => d.id === t.deviceId);
+      const comp = state.completions[t.id];
+      rows.push([t.name, dev?.name||'', t.type, freqLabel(t.freq), comp?.weekKey===wk?'כן':'לא', comp?new Date(comp.date).toLocaleDateString('he-IL'):'', comp?.worker||'']);
+    });
+    parts.push('\n## מצב נוכחי\n' + rows.map(r => r.map(c => `"${String(c).replace(/"/g,'""')}"`).join(',')).join('\n'));
+  }
+  if (!parts.length) { alert('בחרי לפחות סוג אחד'); return; }
+
+  const blob = new Blob([BOM + parts.join('\n')], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = `תחזוקת_מעבדה_${new Date().toISOString().slice(0,10)}.csv`;
+  document.body.appendChild(a); a.click();
+  document.body.removeChild(a); URL.revokeObjectURL(url);
+  closeAllModals();
+  showToast('קובץ CSV הורד בהצלחה');
+};
+
+// ── Init ──
+const { week, year } = getWeekNum();
+document.getElementById('week-label').textContent = `שבוע ${week}, ${year}`;
+
+// Wait for Firebase module to be ready before initializing
+function startApp() {
+  if (window._fbSet && window._fbListen) {
+    initFirebase();
+  } else {
+    window.addEventListener('firebase-ready', initFirebase, { once: true });
+  }
+}
+startApp();
+</script>
+</body>
+</html>
