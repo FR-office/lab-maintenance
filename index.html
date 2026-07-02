@@ -35,6 +35,7 @@ body{font-family:'Heebo',sans-serif;background:#f5f5f3;color:#1a1a1a;min-height:
 .task-meta{font-size:12px;color:#888;display:flex;gap:6px;flex-wrap:wrap;align-items:center}
 .badge{display:inline-block;font-size:11px;padding:2px 8px;border-radius:12px;font-weight:500}
 .badge-device{background:#e1f5ee;color:#0f6e56}
+.badge-general{background:#fdf1de;color:#a5680f}
 .badge-type{background:#eeedfe;color:#3c3489}
 .badge-done{background:#eaf3de;color:#3b6d11}
 .badge-overdue{background:#fde8e8;color:#c0392b}
@@ -377,7 +378,7 @@ function taskCardHTML(t, done, overdue) {
     <div class="task-left">
       <div class="task-name">${t.name}</div>
       <div class="task-meta">
-        ${dev ? `<span class="badge badge-device">${dev.name}</span>` : ''}
+        ${dev ? `<span class="badge badge-device">${dev.name}</span>` : `<span class="badge badge-general">🏠 כללי</span>`}
         <span class="badge badge-type">${t.type}</span>
         <span style="color:#aaa">${freqLabel(t.freq)}</span>
         ${overdue ? `<span class="badge badge-overdue">באיחור</span>` : ''}
@@ -401,10 +402,11 @@ function renderAllTasks() {
   const typeSel = document.getElementById('filter-type');
   const curDev = devSel.value, curType = typeSel.value;
   const types = [...new Set(state.tasks.map(t => t.type))];
-  devSel.innerHTML = '<option value="">כל המכשירים</option>' + state.devices.map(d => `<option value="${d.id}"${curDev===d.id?' selected':''}>${d.name}</option>`).join('');
+  devSel.innerHTML = '<option value="">כל המכשירים</option><option value="__none__"' + (curDev==='__none__'?' selected':'') + '>ללא מכשיר (כללי)</option>' + state.devices.map(d => `<option value="${d.id}"${curDev===d.id?' selected':''}>${d.name}</option>`).join('');
   typeSel.innerHTML = '<option value="">כל הסוגים</option>' + types.map(ty => `<option value="${ty}"${curType===ty?' selected':''}>${ty}</option>`).join('');
   let filtered = state.tasks;
-  if (curDev) filtered = filtered.filter(t => t.deviceId === curDev);
+  if (curDev === '__none__') filtered = filtered.filter(t => !t.deviceId);
+  else if (curDev) filtered = filtered.filter(t => t.deviceId === curDev);
   if (curType) filtered = filtered.filter(t => t.type === curType);
   const html = filtered.map(t => taskCardHTML(t, isDoneThisWeek(t), isOverdue(t))).join('') || `<div class="empty">אין משימות</div>`;
   document.getElementById('all-tasks-list').innerHTML = html;
@@ -452,7 +454,7 @@ function renderManage() {
       <div class="task-left">
         <div class="task-name">${t.name}</div>
         <div class="task-meta">
-          ${dev ? `<span class="badge badge-device">${dev.name}</span>` : ''}
+          ${dev ? `<span class="badge badge-device">${dev.name}</span>` : `<span class="badge badge-general">🏠 כללי</span>`}
           <span class="badge badge-type">${t.type}</span>
           <span style="color:#aaa">${freqLabel(t.freq)}</span>
         </div>
@@ -584,19 +586,19 @@ window.deleteDevice = async function(id) {
 window.openTaskModal = function(id) {
   editingTaskId = id || null;
   const sel = document.getElementById('task-device-select');
-  sel.innerHTML = state.devices.map(d => `<option value="${d.id}">${d.name}</option>`).join('');
-  if (!state.devices.length) { alert('הוסף מכשיר קודם'); return; }
+  sel.innerHTML = '<option value="">— ללא מכשיר (משימה כללית) —</option>' + state.devices.map(d => `<option value="${d.id}">${d.name}</option>`).join('');
   if (id) {
     const t = state.tasks.find(x => x.id === id);
     document.getElementById('task-modal-title').textContent = 'ערוך משימה';
     document.getElementById('task-name-input').value = t.name;
-    sel.value = t.deviceId;
+    sel.value = t.deviceId || '';
     document.getElementById('task-type-select').value = t.type;
     document.getElementById('task-freq-select').value = t.freq;
     document.getElementById('task-instructions').value = t.instructions || '';
   } else {
     document.getElementById('task-modal-title').textContent = 'הוסף משימה';
     document.getElementById('task-name-input').value = '';
+    sel.value = '';
     document.getElementById('task-instructions').value = '';
   }
   const tbtn = document.querySelector('#task-modal .btn-primary');
