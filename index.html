@@ -36,6 +36,10 @@ body{font-family:'Heebo',sans-serif;background:#f5f5f3;color:#1a1a1a;min-height:
 .badge{display:inline-block;font-size:11px;padding:2px 8px;border-radius:12px;font-weight:500}
 .badge-device{background:#e1f5ee;color:#0f6e56}
 .badge-general{background:#fdf1de;color:#a5680f}
+.badge-assignee{background:#eaf2fd;color:#1a5fb4}
+.checkbox-row{display:flex;align-items:center;gap:8px}
+.checkbox-row input{width:16px;height:16px;cursor:pointer;flex-shrink:0}
+.checkbox-row label{margin:0;font-size:13px;color:#444;cursor:pointer}
 .badge-type{background:#eeedfe;color:#3c3489}
 .badge-done{background:#eaf3de;color:#3b6d11}
 .badge-overdue{background:#fde8e8;color:#c0392b}
@@ -120,6 +124,11 @@ body{font-family:'Heebo',sans-serif;background:#f5f5f3;color:#1a1a1a;min-height:
       <button class="add-btn" onclick="openDeviceModal()">+ הוסף מכשיר</button>
     </div>
     <div class="manage-section">
+      <p class="section-header">אנשי צוות</p>
+      <div id="staff-list"></div>
+      <button class="add-btn" onclick="openStaffModal()">+ הוסף איש צוות</button>
+    </div>
+    <div class="manage-section">
       <p class="section-header">משימות תחזוקה</p>
       <div id="tasks-manage-list"></div>
       <button class="add-btn" onclick="openTaskModal()">+ הוסף משימה</button>
@@ -160,6 +169,11 @@ body{font-family:'Heebo',sans-serif;background:#f5f5f3;color:#1a1a1a;min-height:
     <h2 id="task-modal-title">הוסף משימה</h2>
     <div class="form-group"><label>שם המשימה</label><input type="text" id="task-name-input" placeholder="לדוג׳: ניקוי פילטר..."></div>
     <div class="form-group"><label>מכשיר</label><select id="task-device-select"></select></div>
+    <div class="form-group"><label>אחראי (אופציונלי)</label><select id="task-assignee-select"></select></div>
+    <div class="form-group checkbox-row">
+      <input type="checkbox" id="task-reminder-check">
+      <label for="task-reminder-check">לשלוח תזכורת במייל לאחראי כשהמשימה באיחור</label>
+    </div>
     <div class="form-group"><label>סוג פעולה</label>
       <select id="task-type-select">
         <option>ניקוי</option><option>כיול</option><option>בדיקה</option>
@@ -179,6 +193,31 @@ body{font-family:'Heebo',sans-serif;background:#f5f5f3;color:#1a1a1a;min-height:
     <div class="modal-btns">
       <button class="btn-secondary" onclick="closeAllModals()">ביטול</button>
       <button class="btn-primary" onclick="saveTask()">שמור</button>
+    </div>
+  </div>
+</div>
+
+<!-- Staff modal -->
+<div id="staff-modal" class="modal-backdrop" style="display:none">
+  <div class="modal">
+    <h2 id="staff-modal-title">הוסף איש צוות</h2>
+    <div class="form-group"><label>שם</label><input type="text" id="staff-name" placeholder="לדוג׳: דנה כהן"></div>
+    <div class="form-group"><label>אימייל</label><input type="email" id="staff-email" placeholder="name@example.com"></div>
+    <div class="modal-btns">
+      <button class="btn-secondary" onclick="closeAllModals()">ביטול</button>
+      <button class="btn-primary" onclick="saveStaff()">שמור</button>
+    </div>
+  </div>
+</div>
+
+<!-- Quick done modal -->
+<div id="quickdone-modal" class="modal-backdrop" style="display:none">
+  <div class="modal">
+    <h2>עדכון ביצוע למשימה</h2>
+    <div class="form-group"><label>בחרי משימה (כולל משימות שלא ברשימת השבוע)</label><select id="quickdone-select"></select></div>
+    <div class="modal-btns">
+      <button class="btn-secondary" onclick="closeAllModals()">ביטול</button>
+      <button class="btn-primary" onclick="quickDoneGo()">המשך</button>
     </div>
   </div>
 </div>
@@ -228,10 +267,11 @@ window.dispatchEvent(new Event('firebase-ready'));
 
 <script>
 
-let state = {devices:[], tasks:[], completions:{}};
+let state = {devices:[], tasks:[], completions:{}, staff:[]};
 let historyLog = [];
 let pendingDoneTaskId = null;
 let editingDeviceId = null;
+let editingStaffId = null;
 let editingTaskId = null;
 let currentTab = 'this-week';
 
@@ -316,6 +356,7 @@ function initFirebase() {
       if (!state.devices) state.devices = [];
       if (!state.tasks) state.tasks = [];
       if (!state.completions) state.completions = {};
+      if (!state.staff) state.staff = [];
     }
     renderAll();
   });
@@ -368,11 +409,13 @@ function renderThisWeek() {
   if (!pending.length && !doneThis.length) {
     html += `<div class="empty"><div class="empty-icon">✅</div>אין משימות לשבוע זה</div>`;
   }
+  html += `<button class="add-btn" onclick="openQuickDone()">✓ עדכון ביצוע למשימה שלא ברשימה</button>`;
   document.getElementById('tab-this-week').innerHTML = html;
 }
 
 function taskCardHTML(t, done, overdue) {
   const dev = state.devices.find(d => d.id === t.deviceId);
+  const assignee = state.staff.find(s => s.id === t.assigneeId);
   const comp = state.completions[t.id];
   return `<div class="task-card ${done ? 'done' : ''} ${overdue ? 'overdue' : ''}">
     <div class="task-left">
@@ -381,6 +424,7 @@ function taskCardHTML(t, done, overdue) {
         ${dev ? `<span class="badge badge-device">${dev.name}</span>` : `<span class="badge badge-general">🏠 כללי</span>`}
         <span class="badge badge-type">${t.type}</span>
         <span style="color:#aaa">${freqLabel(t.freq)}</span>
+        ${assignee ? `<span class="badge badge-assignee">👤 ${assignee.name}</span>` : ''}
         ${overdue ? `<span class="badge badge-overdue">באיחור</span>` : ''}
         ${done ? `<span class="badge badge-done">✓ בוצע</span>` : ''}
       </div>
@@ -448,8 +492,22 @@ function renderManage() {
     </div>`).join('') || `<div class="empty" style="padding:16px 0">אין מכשירים — הוסף למטה</div>`;
   document.getElementById('devices-list').innerHTML = dhtml;
 
+  const shtml = state.staff.map(s => `
+    <div class="task-card" style="align-items:center">
+      <div class="task-left">
+        <div class="task-name">${s.name}</div>
+        ${s.email ? `<div style="font-size:12px;color:#888">${s.email}</div>` : ''}
+      </div>
+      <div class="task-actions">
+        <button class="btn-action" onclick="openStaffModal('${s.id}')">✏️ ערוך</button>
+        <button class="btn-action danger" onclick="deleteStaff('${s.id}')">🗑</button>
+      </div>
+    </div>`).join('') || `<div class="empty" style="padding:16px 0">אין אנשי צוות — הוסף למטה</div>`;
+  document.getElementById('staff-list').innerHTML = shtml;
+
   const thtml = state.tasks.map(t => {
     const dev = state.devices.find(d => d.id === t.deviceId);
+    const assignee = state.staff.find(s => s.id === t.assigneeId);
     return `<div class="task-card" style="align-items:center">
       <div class="task-left">
         <div class="task-name">${t.name}</div>
@@ -457,6 +515,7 @@ function renderManage() {
           ${dev ? `<span class="badge badge-device">${dev.name}</span>` : `<span class="badge badge-general">🏠 כללי</span>`}
           <span class="badge badge-type">${t.type}</span>
           <span style="color:#aaa">${freqLabel(t.freq)}</span>
+          ${assignee ? `<span class="badge badge-assignee">👤 ${assignee.name}${t.emailReminder ? ' · 📧' : ''}</span>` : ''}
         </div>
         ${t.instructions ? `<div class="task-instructions">${t.instructions}</div>` : ''}
       </div>
@@ -583,15 +642,90 @@ window.deleteDevice = async function(id) {
   }
 };
 
+window.openStaffModal = function(id) {
+  editingStaffId = id || null;
+  if (id) {
+    const s = state.staff.find(x => x.id === id);
+    document.getElementById('staff-modal-title').textContent = 'ערוך איש צוות';
+    document.getElementById('staff-name').value = s.name;
+    document.getElementById('staff-email').value = s.email || '';
+  } else {
+    document.getElementById('staff-modal-title').textContent = 'הוסף איש צוות';
+    document.getElementById('staff-name').value = '';
+    document.getElementById('staff-email').value = '';
+  }
+  const btn = document.querySelector('#staff-modal .btn-primary');
+  btn.textContent = 'שמור'; btn.disabled = false;
+  document.getElementById('staff-modal').style.display = 'flex';
+  setTimeout(() => document.getElementById('staff-name').focus(), 100);
+};
+
+window.saveStaff = async function() {
+  const name = document.getElementById('staff-name').value.trim();
+  if (!name) { alert('נא להזין שם'); return; }
+  const email = document.getElementById('staff-email').value.trim();
+  const btn = document.querySelector('#staff-modal .btn-primary');
+  btn.textContent = 'שומר...'; btn.disabled = true;
+  try {
+    if (editingStaffId) {
+      const s = state.staff.find(x => x.id === editingStaffId);
+      s.name = name; s.email = email;
+    } else {
+      state.staff.push({ id: 'p' + Date.now(), name, email });
+    }
+    await saveState();
+    closeAllModals();
+    showToast(editingStaffId ? '✓ איש צוות עודכן' : '✓ איש צוות נוסף');
+  } catch(e) {
+    alert('שגיאה בשמירה — בדקי חיבור לאינטרנט ונסי שוב');
+    btn.textContent = 'שמור'; btn.disabled = false;
+  }
+};
+
+window.deleteStaff = async function(id) {
+  const s = state.staff.find(x => x.id === id);
+  const count = state.tasks.filter(t => t.assigneeId === id).length;
+  const msg = count > 0 ? `למחוק את "${s?.name}"? ${count} משימות ישארו ללא אחראי.` : `למחוק את "${s?.name}"?`;
+  if (!confirm(msg)) return;
+  try {
+    state.staff = state.staff.filter(x => x.id !== id);
+    state.tasks.forEach(t => { if (t.assigneeId === id) t.assigneeId = ''; });
+    await saveState();
+    showToast('✓ איש צוות נמחק');
+  } catch(e) {
+    alert('שגיאה במחיקה — בדקי חיבור לאינטרנט ונסי שוב');
+  }
+};
+
+window.openQuickDone = function() {
+  if (!state.tasks.length) { alert('אין משימות במערכת עדיין'); return; }
+  const sel = document.getElementById('quickdone-select');
+  sel.innerHTML = state.tasks.map(t => {
+    const dev = state.devices.find(d => d.id === t.deviceId);
+    return `<option value="${t.id}">${t.name} — ${dev ? dev.name : 'כללי'}</option>`;
+  }).join('');
+  document.getElementById('quickdone-modal').style.display = 'flex';
+};
+
+window.quickDoneGo = function() {
+  const id = document.getElementById('quickdone-select').value;
+  closeAllModals();
+  startDone(id);
+};
+
 window.openTaskModal = function(id) {
   editingTaskId = id || null;
   const sel = document.getElementById('task-device-select');
   sel.innerHTML = '<option value="">— ללא מכשיר (משימה כללית) —</option>' + state.devices.map(d => `<option value="${d.id}">${d.name}</option>`).join('');
+  const asel = document.getElementById('task-assignee-select');
+  asel.innerHTML = '<option value="">— ללא אחראי —</option>' + state.staff.map(s => `<option value="${s.id}">${s.name}</option>`).join('');
   if (id) {
     const t = state.tasks.find(x => x.id === id);
     document.getElementById('task-modal-title').textContent = 'ערוך משימה';
     document.getElementById('task-name-input').value = t.name;
     sel.value = t.deviceId || '';
+    asel.value = t.assigneeId || '';
+    document.getElementById('task-reminder-check').checked = !!t.emailReminder;
     document.getElementById('task-type-select').value = t.type;
     document.getElementById('task-freq-select').value = t.freq;
     document.getElementById('task-instructions').value = t.instructions || '';
@@ -599,6 +733,8 @@ window.openTaskModal = function(id) {
     document.getElementById('task-modal-title').textContent = 'הוסף משימה';
     document.getElementById('task-name-input').value = '';
     sel.value = '';
+    asel.value = '';
+    document.getElementById('task-reminder-check').checked = false;
     document.getElementById('task-instructions').value = '';
   }
   const tbtn = document.querySelector('#task-modal .btn-primary');
@@ -616,6 +752,8 @@ window.saveTask = async function() {
     const data = {
       name,
       deviceId: document.getElementById('task-device-select').value,
+      assigneeId: document.getElementById('task-assignee-select').value,
+      emailReminder: document.getElementById('task-reminder-check').checked,
       type: document.getElementById('task-type-select').value,
       freq: parseInt(document.getElementById('task-freq-select').value),
       instructions: document.getElementById('task-instructions').value.trim()
