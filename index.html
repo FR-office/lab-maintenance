@@ -181,4 +181,611 @@ tr.done td{color:#555}
         <label>שליחת מייל תזכורת (אוטומטי):</label>
         <select id="taskReminderTiming" class="form-control">
           <option value="none">ללא תזכורת</option>
-          <option value="on_day">
+          <option value="on_day">ביום הביצוע עצמו</option>
+          <option value="1_day_before">יום לפני תאריך היעד</option>
+          <option value="3_days_before">3 ימים לפני תאריך היעד</option>
+          <option value="1_week_before">שבוע לפני תאריך היעד</option>
+        </select>
+      </div>
+      
+    </div>
+    <div class="modal-footer">
+      <button class="btn" onclick="closeModal('taskModal')">ביטול</button>
+      <button class="btn btn-primary" onclick="saveTask()">שמור משימה</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal" id="deviceModal">
+  <div class="modal-content" style="max-width:400px">
+    <div class="modal-header">
+      <div class="modal-title" id="deviceModalTitle">מכשיר/אזור חדש</div>
+      <button class="close-btn" onclick="closeModal('deviceModal')">&times;</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="deviceId">
+      <div class="form-group">
+        <label>שם / זיהוי</label>
+        <input type="text" id="deviceName" class="form-control" placeholder="למשל: חדר 101, מנדף כימי...">
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" onclick="closeModal('deviceModal')">ביטול</button>
+      <button class="btn btn-primary" onclick="saveDevice()">שמור</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal" id="completeModal">
+  <div class="modal-content" style="max-width:400px">
+    <div class="modal-header">
+      <div class="modal-title">דיווח ביצוע משימה</div>
+      <button class="close-btn" onclick="closeModal('completeModal')">&times;</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="completeTaskId">
+      <p style="margin-bottom:16px;font-weight:500" id="completeTaskName"></p>
+      
+      <div class="form-group">
+        <label>תאריך ביצוע</label>
+        <input type="date" id="completeDate" class="form-control">
+      </div>
+      <div class="form-group">
+        <label>שם המבצע/ת</label>
+        <input type="text" id="completeWorker" class="form-control" placeholder="מי ביצע את המשימה?">
+      </div>
+      <div class="form-group">
+        <label>הערות (אופציונלי)</label>
+        <textarea id="completeNotes" class="form-control" rows="2"></textarea>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" onclick="closeModal('completeModal')">ביטול</button>
+      <button class="btn btn-primary" onclick="saveCompletion()">דווח ביצוע</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal" id="exportModal">
+  <div class="modal-content" style="max-width:400px">
+    <div class="modal-header">
+      <div class="modal-title">ייצוא נתונים</div>
+      <button class="close-btn" onclick="closeModal('exportModal')">&times;</button>
+    </div>
+    <div class="modal-body">
+      <p style="margin-bottom:16px;font-size:14px;color:#555">בחר את הנתונים שברצונך לייצא לקובץ CSV (אקסל):</p>
+      <div class="form-group checkbox-group">
+        <input type="checkbox" id="exportTasks" checked>
+        <label for="exportTasks" style="margin:0">רשימת משימות והגדרות</label>
+      </div>
+      <div class="form-group checkbox-group">
+        <input type="checkbox" id="exportHistory" checked>
+        <label for="exportHistory" style="margin:0">היסטוריית דיווחים (לוגים)</label>
+      </div>
+      <div class="form-group checkbox-group">
+        <input type="checkbox" id="exportStatus" checked>
+        <label for="exportStatus" style="margin:0">מצב נוכחי (מי עשה מה השבוע)</label>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" onclick="closeModal('exportModal')">ביטול</button>
+      <button class="btn btn-primary" onclick="exportData()">הורד קובץ</button>
+    </div>
+  </div>
+</div>
+
+<div id="workerModal" class="modal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:1000; justify-content:center; align-items:center;">
+  <div style="background:#fff; padding:20px; width:400px; max-width:90%; border-radius:8px;">
+    <h2 style="margin-bottom:10px; font-size:18px;">ניהול עובדים למייל</h2>
+    
+    <div style="margin-top:15px; display:flex; gap:10px;">
+      <input type="text" id="newWorkerName" placeholder="שם העובד" style="flex:1; padding:8px; border:1px solid #ddd; border-radius:4px;">
+      <input type="email" id="newWorkerEmail" placeholder="כתובת מייל" style="flex:1; padding:8px; border:1px solid #ddd; border-radius:4px;">
+      <button onclick="addWorker()" style="padding:8px 15px; background:#28a745; color:white; border:none; border-radius:4px; cursor:pointer;">הוסף</button>
+    </div>
+
+    <ul id="workersList" style="margin-top:20px; list-style:none; padding:0; max-height:200px; overflow-y:auto;">
+      </ul>
+
+    <div style="margin-top:20px; text-align:left;">
+      <button onclick="closeWorkerModal()" style="padding:8px 15px; background:#6c757d; color:white; border:none; border-radius:4px; cursor:pointer;">סגור</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// --- State & Data ---
+let state = {
+  tasks: [],
+  devices: [],
+  completions: {}, // taskId -> { date, worker, notes, weekKey }
+  workers: [] // רשימת העובדים והמיילים
+};
+
+// FIREBASE URL (החליפי ב-URL שלך מ-Firebase Realtime Database!)
+// למשל: "https://my-lab-app-default-rtdb.firebaseio.com"
+const FIREBASE_URL = "https://lab-maintenance-e181d-default-rtdb.firebaseio.com";
+
+// קריאת נתונים מהענן בהפעלת האתר
+async function loadFromFirebase() {
+  if (!FIREBASE_URL) return false;
+  try {
+    const res = await fetch(`${FIREBASE_URL}/state.json`);
+    const data = await res.json();
+    if (data) {
+      state.tasks = data.tasks || [];
+      state.devices = data.devices || [];
+      state.completions = data.completions || {};
+      state.workers = data.workers || [];
+      return true;
+    }
+  } catch(e) {
+    console.warn("Failed to load from Firebase:", e);
+  }
+  return false;
+}
+
+// שמירת נתונים לענן
+async function saveToFirebase() {
+  if (!FIREBASE_URL) return;
+  try {
+    await fetch(`${FIREBASE_URL}/state.json`, {
+      method: 'PUT', // דורס ושומר הכל מחדש
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(state)
+    });
+  } catch(e) {
+    console.error("Failed to save to Firebase:", e);
+  }
+}
+
+// --- Utils ---
+function getWeekKey(date = new Date()) {
+  const d = new Date(date);
+  d.setHours(0,0,0,0);
+  d.setDate(d.getDate() - d.getDay()); // Sunday
+  return d.toISOString().split('T')[0];
+}
+
+function freqLabel(f) {
+  return f == 1 ? 'שבועית' : f == 2 ? 'דו-שבועית' : f == 4 ? 'חודשית' : f == 12 ? 'רבעונית' : f == 24 ? 'חצי שנתית' : f == 52 ? 'שנתית' : `כל ${f} שב'`;
+}
+
+function calcDueDate(lastDoneDateStr, freqWeeks) {
+  if (!lastDoneDateStr) return new Date(); // אם אין, תאריך יעד הוא היום
+  const d = new Date(lastDoneDateStr);
+  d.setDate(d.getDate() + (freqWeeks * 7));
+  return d;
+}
+
+// מחשב כמה ימים עברו מתאריך היעד או כמה נשארו
+function getOverdueDays(task, lastDoneDateStr) {
+  let targetDate;
+  // אם מעולם לא בוצעה, נתייחס לתאריך היעד הראשוני שנקבע או להיום
+  if (!lastDoneDateStr) {
+      if(task.initialDueDate) targetDate = new Date(task.initialDueDate);
+      else targetDate = new Date(); // אם לא נקבע מעולם, נניח שהיעד הוא היום
+  } else {
+      targetDate = calcDueDate(lastDoneDateStr, task.freq);
+  }
+  
+  const today = new Date();
+  targetDate.setHours(0,0,0,0);
+  today.setHours(0,0,0,0);
+  
+  const diffTime = today - targetDate;
+  const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+  return diffDays; // חיובי = באיחור, שלילי = נותר זמן
+}
+
+function formatDate(dateObj) {
+  return dateObj.toLocaleDateString('he-IL', {day:'2-digit', month:'2-digit', year:'numeric'});
+}
+
+function init() {
+  const wk = getWeekKey();
+  const endWk = new Date(wk);
+  endWk.setDate(endWk.getDate() + 6);
+  document.getElementById('currentWeekDisplay').textContent = 
+    `שבוע: ${wk.slice(8,10)}/${wk.slice(5,7)} - ${endWk.toISOString().slice(8,10)}/${endWk.toISOString().slice(5,7)}`;
+
+  // נסה לטעון מענן. אם לא הצליח, טען מקומי
+  loadFromFirebase().then(success => {
+    if(!success) {
+      const saved = localStorage.getItem('labState');
+      if (saved) {
+        state = JSON.parse(saved);
+        if(!state.workers) state.workers = [];
+      }
+    }
+    renderDevices();
+    renderTasks();
+    populateDeviceSelect();
+    populateAssigneeDropdown(); // מילוי רשימת העובדים בטופס
+  });
+}
+
+function saveData() {
+  localStorage.setItem('labState', JSON.stringify(state));
+  saveToFirebase(); // שמירה לענן ברקע
+}
+
+// --- Modals ---
+function openModal(id) { document.getElementById(id).style.display = 'flex'; }
+function closeModal(id) { document.getElementById(id).style.display = 'none'; }
+
+// --- Worker Management ---
+function openWorkerModal() {
+  document.getElementById('workerModal').style.display = 'flex';
+  renderWorkersList();
+}
+
+function closeWorkerModal() {
+  document.getElementById('workerModal').style.display = 'none';
+  populateAssigneeDropdown(); // עדכון הרשימה הנפתחת בטופס המשימה
+}
+
+function addWorker() {
+  const name = document.getElementById('newWorkerName').value.trim();
+  const email = document.getElementById('newWorkerEmail').value.trim();
+  
+  if(!name || !email) {
+    alert("נא למלא שם ומייל");
+    return;
+  }
+  
+  if (!state.workers) state.workers = []; 
+  
+  state.workers.push({
+    id: Date.now().toString(),
+    name: name,
+    email: email
+  });
+  
+  document.getElementById('newWorkerName').value = '';
+  document.getElementById('newWorkerEmail').value = '';
+  saveData(); 
+  renderWorkersList();
+}
+
+function deleteWorker(id) {
+  state.workers = state.workers.filter(w => w.id !== id);
+  saveData();
+  renderWorkersList();
+}
+
+function renderWorkersList() {
+  const list = document.getElementById('workersList');
+  list.innerHTML = '';
+  if(!state.workers) return;
+  
+  state.workers.forEach(w => {
+    const li = document.createElement('li');
+    li.style.cssText = "display:flex; justify-content:space-between; padding:8px 0; border-bottom:1px solid #eee;";
+    li.innerHTML = `
+      <span><strong>${w.name}</strong> (${w.email})</span>
+      <button onclick="deleteWorker('${w.id}')" style="color:red; background:none; border:none; cursor:pointer;">מחק</button>
+    `;
+    list.appendChild(li);
+  });
+}
+
+function populateAssigneeDropdown() {
+  const select = document.getElementById('taskAssignee');
+  if(!select) return;
+  
+  const currentValue = select.value;
+  select.innerHTML = '<option value="">ללא אחראי</option>';
+  
+  if(state.workers) {
+    state.workers.forEach(w => {
+      const option = document.createElement('option');
+      option.value = w.id;
+      option.textContent = w.name;
+      select.appendChild(option);
+    });
+  }
+  select.value = currentValue; 
+}
+
+
+// --- Devices ---
+function openDeviceModal(id = null) {
+  const d = state.devices.find(x => x.id === id);
+  document.getElementById('deviceModalTitle').textContent = d ? 'ערוך מכשיר' : 'מכשיר חדש';
+  document.getElementById('deviceId').value = d ? d.id : '';
+  document.getElementById('deviceName').value = d ? d.name : '';
+  openModal('deviceModal');
+}
+
+function saveDevice() {
+  const id = document.getElementById('deviceId').value;
+  const name = document.getElementById('deviceName').value.trim();
+  if (!name) return alert('נא להזין שם מכשיר');
+
+  if (id) {
+    state.devices.find(x => x.id === id).name = name;
+  } else {
+    state.devices.push({ id: Date.now().toString(), name });
+  }
+  saveData();
+  renderDevices();
+  populateDeviceSelect();
+  renderTasks();
+  closeModal('deviceModal');
+}
+
+function deleteDevice(id) {
+  if (!confirm('למחוק מכשיר זה? המשימות שלו יישארו ללא שיוך.')) return;
+  state.devices = state.devices.filter(x => x.id !== id);
+  state.tasks.forEach(t => { if(t.deviceId === id) t.deviceId = ''; });
+  saveData();
+  renderDevices();
+  populateDeviceSelect();
+  renderTasks();
+}
+
+function renderDevices() {
+  const container = document.getElementById('devicesList');
+  if (state.devices.length === 0) {
+    container.innerHTML = '<div class="empty-state">אין מכשירים מוגדרים.<br>לחץ "הוסף" כדי להתחיל.</div>';
+    return;
+  }
+  container.innerHTML = state.devices.map(d => `
+    <div class="device-item">
+      <div class="device-name">${d.name}</div>
+      <div class="device-actions">
+        <button class="btn" style="padding:2px 6px;font-size:11px" onclick="openDeviceModal('${d.id}')">ערוך</button>
+        <button class="btn" style="padding:2px 6px;font-size:11px;color:red" onclick="deleteDevice('${d.id}')">מחק</button>
+      </div>
+    </div>
+  `).join('');
+}
+
+function populateDeviceSelect() {
+  const sel = document.getElementById('taskDevice');
+  const curr = sel.value;
+  sel.innerHTML = '<option value="">-- בחר מכשיר (לא חובה) --</option>' + 
+    state.devices.map(d => `<option value="${d.id}">${d.name}</option>`).join('');
+  sel.value = curr;
+}
+
+// --- Tasks ---
+function openTaskModal(id = null) {
+  const t = state.tasks.find(x => x.id === id);
+  document.getElementById('taskModalTitle').textContent = t ? 'ערוך משימה' : 'משימה חדשה';
+  document.getElementById('taskId').value = t ? t.id : '';
+  document.getElementById('taskName').value = t ? t.name : '';
+  document.getElementById('taskDevice').value = t ? t.deviceId : '';
+  document.getElementById('taskType').value = t ? t.type : 'תחזוקה';
+  document.getElementById('taskFreq').value = t ? t.freq : '1';
+  document.getElementById('taskInstructions').value = t ? (t.instructions || '') : '';
+  
+  // השדות החדשים: אחראי ותזכורת
+  document.getElementById('taskAssignee').value = t ? (t.assigneeId || '') : '';
+  document.getElementById('taskReminderTiming').value = t ? (t.reminderTiming || 'none') : 'none';
+
+  // תאריך ביצוע אחרון (רק אם זו משימה חדשה אפשר להגדיר לה יעד ראשוני דרך שדה זה)
+  const dateInput = document.getElementById('taskInitialLastDone');
+  if(t) {
+      dateInput.value = state.completions[t.id] ? state.completions[t.id].date : (t.initialLastDone || '');
+      dateInput.disabled = !!state.completions[t.id]; // אם כבר דווחה פעם אחת דרך המערכת, אי אפשר לערוך פה
+  } else {
+      dateInput.value = '';
+      dateInput.disabled = false;
+  }
+
+  openModal('taskModal');
+}
+
+function saveTask() {
+  const id = document.getElementById('taskId').value;
+  const name = document.getElementById('taskName').value.trim();
+  if (!name) return alert('נא להזין שם משימה');
+
+  const newTask = {
+    id: id || Date.now().toString(),
+    name,
+    deviceId: document.getElementById('taskDevice').value,
+    type: document.getElementById('taskType').value,
+    freq: parseInt(document.getElementById('taskFreq').value),
+    instructions: document.getElementById('taskInstructions').value,
+    assigneeId: document.getElementById('taskAssignee').value,
+    reminderTiming: document.getElementById('taskReminderTiming').value,
+    initialLastDone: document.getElementById('taskInitialLastDone').value || null
+  };
+
+  if (id) {
+    const idx = state.tasks.findIndex(x => x.id === id);
+    // לשמור על initialDueDate אם היה
+    newTask.initialDueDate = state.tasks[idx].initialDueDate; 
+    state.tasks[idx] = newTask;
+  } else {
+    // אם זו משימה חדשה לחלוטין ויש לה תאריך ביצוע אחרון ראשוני, נגזור ממנו תאריך יעד ראשוני
+    if(newTask.initialLastDone) {
+        newTask.initialDueDate = calcDueDate(newTask.initialLastDone, newTask.freq).toISOString().split('T')[0];
+    }
+    state.tasks.push(newTask);
+  }
+  
+  saveData();
+  renderTasks();
+  closeModal('taskModal');
+}
+
+function deleteTask(id) {
+  if (!confirm('למחוק משימה זו?')) return;
+  state.tasks = state.tasks.filter(x => x.id !== id);
+  delete state.completions[id];
+  saveData();
+  renderTasks();
+}
+
+function renderTasks() {
+  const tbody = document.querySelector('#tasksTable tbody');
+  if (state.tasks.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:30px;color:#888">אין משימות במערכת</td></tr>';
+    return;
+  }
+
+  // מיון: קודם אלה שבאיחור, אחר כך לפי תאריך יעד
+  const sortedTasks = [...state.tasks].sort((a, b) => {
+    const aLastStr = state.completions[a.id] ? state.completions[a.id].date : a.initialLastDone;
+    const bLastStr = state.completions[b.id] ? state.completions[b.id].date : b.initialLastDone;
+    const aOver = getOverdueDays(a, aLastStr);
+    const bOver = getOverdueDays(b, bLastStr);
+    return bOver - aOver; // מהגבוה (באיחור רב) לנמוך
+  });
+
+  const wk = getWeekKey();
+
+  tbody.innerHTML = sortedTasks.map(t => {
+    const dev = state.devices.find(d => d.id === t.deviceId);
+    const comp = state.completions[t.id];
+    
+    // מציאת תאריך ביצוע אחרון (או מהמערכת או מהגדרת הבסיס)
+    const lastDoneStr = comp ? comp.date : t.initialLastDone;
+    
+    let isDoneThisWeek = false;
+    let overdueDays = getOverdueDays(t, lastDoneStr);
+    let statusHtml = '';
+    let dueDateStr = '';
+
+    if (lastDoneStr) {
+      const targetDate = calcDueDate(lastDoneStr, t.freq);
+      dueDateStr = formatDate(targetDate);
+    } else if (t.initialDueDate) {
+      dueDateStr = formatDate(new Date(t.initialDueDate));
+    } else {
+      dueDateStr = formatDate(new Date()); // אם אין כלום, היעד להיום
+    }
+
+    if (comp && comp.weekKey === wk) {
+      isDoneThisWeek = true;
+      statusHtml = '<span class="status-badge status-done">בוצע השבוע</span>';
+    } else if (overdueDays > 0) {
+      statusHtml = `<span class="status-badge status-overdue">באיחור (${overdueDays} ימ')</span>`;
+    } else {
+      statusHtml = '<span class="status-badge status-pending">ממתין</span>';
+    }
+
+    return `
+      <tr class="${isDoneThisWeek ? 'done' : ''}">
+        <td>${statusHtml}</td>
+        <td style="font-weight:500">${t.name}</td>
+        <td>${dev ? dev.name : '-'}</td>
+        <td>${t.type}</td>
+        <td>${freqLabel(t.freq)}</td>
+        <td>${dueDateStr}</td>
+        <td>
+          <button class="btn btn-primary" style="padding:4px 8px;font-size:12px;margin-left:4px" onclick="openCompleteModal('${t.id}')">דווח</button>
+          <button class="btn" style="padding:4px 8px;font-size:12px" onclick="openTaskModal('${t.id}')">ערוך</button>
+          <button class="btn" style="padding:4px 8px;font-size:12px;color:red;border:none;background:none" onclick="deleteTask('${t.id}')">מחק</button>
+        </td>
+      </tr>
+    `;
+  }).join('');
+}
+
+// --- Completion ---
+function openCompleteModal(taskId) {
+  const t = state.tasks.find(x => x.id === taskId);
+  document.getElementById('completeTaskId').value = t.id;
+  document.getElementById('completeTaskName').textContent = t.name;
+  document.getElementById('completeDate').value = new Date().toISOString().split('T')[0];
+  document.getElementById('completeWorker').value = '';
+  document.getElementById('completeNotes').value = '';
+  openModal('completeModal');
+}
+
+function saveCompletion() {
+  const taskId = document.getElementById('completeTaskId').value;
+  const date = document.getElementById('completeDate').value;
+  const worker = document.getElementById('completeWorker').value.trim();
+  const notes = document.getElementById('completeNotes').value.trim();
+
+  if (!date) return alert('חובה לבחור תאריך');
+
+  // שמירה היסטורית (אופציונלי בעתיד, כרגע שומר את האחרון ב-state הראשי)
+  // כאן אנו דורסים את האחרון:
+  state.completions[taskId] = {
+    date,
+    worker,
+    notes,
+    weekKey: getWeekKey(date),
+    timestamp: Date.now()
+  };
+
+  // שמירת לוג בהיסטוריה (מערך נפרד שנוכל לייצא)
+  if(!state.history) state.history = [];
+  state.history.push({
+    taskId,
+    date,
+    worker,
+    notes,
+    timestamp: Date.now()
+  });
+
+  saveData();
+  renderTasks();
+  closeModal('completeModal');
+}
+
+// --- Export ---
+function openExportModal() {
+  openModal('exportModal');
+}
+
+function exportData() {
+  const tasksChecked = document.getElementById('exportTasks').checked;
+  const histChecked = document.getElementById('exportHistory').checked;
+  const statChecked = document.getElementById('exportStatus').checked;
+
+  let parts = [];
+  const BOM = "\uFEFF"; // תמיכה בעברית באקסל
+
+  if (tasksChecked) {
+    let rows = [['מזהה','שם משימה','מכשיר','סוג','תדירות (שבועות)','אחראי (מזהה)','הנחיות']];
+    state.tasks.forEach(t => {
+      const dev = state.devices.find(d => d.id === t.deviceId);
+      rows.push([t.id, t.name, dev?.name||'', t.type, t.freq, t.assigneeId||'', t.instructions||'']);
+    });
+    parts.push('## רשימת משימות\n' + rows.map(r => r.map(c => `"${String(c).replace(/"/g,'""')}"`).join(',')).join('\n'));
+  }
+  if (histChecked) {
+    let rows = [['תאריך ביצוע','משימה','מכשיר','מבצע','הערות']];
+    const hist = state.history || [];
+    hist.sort((a,b) => b.timestamp - a.timestamp).forEach(h => {
+      const t = state.tasks.find(x => x.id === h.taskId);
+      if(!t) return;
+      const dev = state.devices.find(d => d.id === t.deviceId);
+      rows.push([new Date(h.date).toLocaleDateString('he-IL'), t.name, dev?.name||'', h.worker, h.notes||'']);
+    });
+    parts.push('\n## היסטוריית ביצועים\n' + rows.map(r => r.map(c => `"${String(c).replace(/"/g,'""')}"`).join(',')).join('\n'));
+  }
+  if (statChecked) {
+    const wk = getWeekKey();
+    let rows = [['שם משימה','מכשיר','סוג','תדירות','בוצע השבוע','תאריך ביצוע אחרון','מבצע אחרון']];
+    state.tasks.forEach(t => {
+      const dev = state.devices.find(d => d.id === t.deviceId);
+      const comp = state.completions[t.id];
+      rows.push([t.name, dev?.name||'', t.type, freqLabel(t.freq), comp?.weekKey===wk?'כן':'לא', comp?new Date(comp.date).toLocaleDateString('he-IL'):'', comp?.worker||'']);
+    });
+    parts.push('\n## מצב נוכחי\n' + rows.map(r => r.map(c => `"${String(c).replace(/"/g,'""')}"`).join(',')).join('\n'));
+  }
+  if (!parts.length) { alert('בחרי לפחות סוג אחד'); return; }
+
+  const blob = new Blob([BOM + parts.join('\n')], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = `תחזוקת_מעבדה_${new Date().toISOString().slice(0,10)}.csv`;
+  document.body.appendChild(a); a.click();
+  document.body.removeChild(a); URL.revokeObjectURL(url);
+  closeModal('exportModal');
+}
+
+// הפעלה
+init();
+</script>
+</body>
+</html>
