@@ -2,21 +2,25 @@ name: Task Email Reminders
 
 on:
   schedule:
-    # Runs every day at 06:00 UTC (~09:00 Israel winter time / 08:00 summer time — GitHub cron is always UTC).
+    # Runs once a day. This is the time ALL scheduled reminders go out (per-task
+    # timing is controlled by "days before due date" in the app, not by this cron).
+    # GitHub cron is always UTC. Currently set to 06:00 UTC = 09:00 Israel winter
+    # time / 08:00 Israel summer time. Change the two numbers below to shift it
+    # (format: minute hour * * *).
     - cron: '0 6 * * *'
-  workflow_dispatch: {}    # lets you trigger it manually from the Actions tab to test
+  workflow_dispatch: {}   # lets you trigger it manually from the Actions tab to test
 
 jobs:
   send-reminders:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
-          node-version: '24' # עודכן מ-20 ל-24 כדי למנוע את הודעת ה-Deprecation
+          node-version: '24'
 
       - name: Send reminder emails
         env:
