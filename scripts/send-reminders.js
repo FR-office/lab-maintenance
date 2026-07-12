@@ -1,82 +1,101 @@
 // send-reminders.js
-// סקריפט מעודכן לתמיכה בעובדים מרובים ותזמוני תזכורת משתנים
+// Runs in GitHub Actions on a daily schedule. For each task that has
+// emailReminder = true and a due date, checks whether TODAY is the
+// scheduled reminder day (due date minus reminderDaysBefore days).
+// If so, sends an email to the assignee via the EmailJS REST API, and
+// records that a reminder was already sent for that due-date cycle so
+// it won't be sent again if the workflow runs more than once that day.
 
-const FIREBASE_DB_URL = process.env.FIREBASE_DB_URL; 
+const FIREBASE_DB_URL = process.env.FIREBASE_DB_URL; // e.g. https://lab-maintenance-e181d-default-rtdb.firebaseio.com
 const EMAILJS_SERVICE_ID = process.env.EMAILJS_SERVICE_ID;
 const EMAILJS_TEMPLATE_ID = process.env.EMAILJS_TEMPLATE_ID;
 const EMAILJS_PUBLIC_KEY = process.env.EMAILJS_PUBLIC_KEY;
 const EMAILJS_PRIVATE_KEY = process.env.EMAILJS_PRIVATE_KEY;
+const TIMEZONE = 'Asia/Jerusalem'; // used only to decide which calendar day "today" is
+
+const dateFmt = new Intl.DateTimeFormat('en-CA', { timeZone: TIMEZONE }); // yields YYYY-MM-DD
+
+function toDateStr(d) {
+  return dateFmt.format(d);
+}
 
 function freqLabel(f) {
   return f === 1 ? 'שבועי' : f === 2 ? 'דו-שבועי' : f === 4 ? 'חודשי' : f === 8 ? 'חודשיים' : `כל ${f} שב'`;
 }
 
+function reminderTimingLabel(days) {
+  const d = days || 0;
+  if (d === 0) return 'ביום היעד';
+  if (d === 1) return 'יום לפני';
+  if (d === 2) return 'יומיים לפני';
+  return `${d} ימים לפני`;
+}
+
+// Mirrors nextDueDate() in the web app: due date = last completion date + freq weeks.
+// Tasks that were never completed have no computable due date, so they're skipped
+// (same as the app's own logic — a task only gets a due date once it has a baseline).
+function nextDueDate(task, completions) {
+  const last = completions[task.id];
+  if (!last) return null;
+  const d = new Date(last.date);
+  d.setDate(d.getDate() + task.freq * 7);
+  return d;
+}
+
 async function main() {
-  if (!FIREBASE_DB_URL || !EMAILJS_SERVICE_ID) {
-    console.error("Missing environment variables!");
+  if (!FIREBASE_DB_URL || !EMAILJS_SERVICE_ID || !EMAILJS_TEMPLATE_ID || !EMAILJS_PUBLIC_KEY || !EMAILJS_PRIVATE_KEY) {
+    console.error('Missing required environment variables/secrets.');
     process.exit(1);
   }
 
-  console.log("Fetching state from Firebase...");
-  const res = await fetch(`${FIREBASE_DB_URL}/state.json`);
-  const state = await res.json();
+  const stateUrl = `${FIREBASE_DB_URL}/lab_fert_2024/state.json`;
+  const stateRes = await fetch(stateUrl);
+  if (!stateRes.ok) throw new Error(`Failed to fetch state: ${stateRes.status}`);
+  const state = await stateRes.json();
 
-  if (!state || !state.tasks) {
-    console.log("No tasks found.");
+  const tasks = state?.tasks || [];
+  const devices = state?.devices || [];
+  const staff = state?.staff || [];
+  const completions = state?.completions || {};
+
+  const today = new Date();
+  const todayStr = toDateStr(today);
+
+  let anyChanges = false;
+  const toSend = [];
+
+  for (const task of tasks) {
+    if (!task.emailReminder || !task.assigneeId) continue;
+
+    const due = nextDueDate(task, completions);
+    if (!due) continue; // never completed yet — no baseline to count from
+
+    const dueStr = toDateStr(due);
+    const daysBefore = task.reminderDaysBefore || 0;
+    const target = new Date(due);
+    target.setDate(target.getDate() - daysBefore);
+    const targetStr = toDateStr(target);
+
+    if (targetStr !== todayStr) continue; // not the scheduled day yet
+    if (task.lastReminderSentFor === dueStr) continue; // already sent for this cycle
+
+    toSend.push({ task, dueStr });
+  }
+
+  if (!toSend.length) {
+    console.log('No reminders scheduled for today. Nothing to send.');
     return;
   }
 
-  const tasks = state.tasks || [];
-  const devices = state.devices || [];
-  const completions = state.completions || {};
-  const workers = state.workers || []; // משיכת רשימת העובדים
+  console.log(`Found ${toSend.length} reminder(s) to send today (${todayStr}).`);
 
-  // הגדרת תאריך של היום (מאופס לשעת חצות כדי למנוע בעיות של שעות קטנות)
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-
-  for (const task of tasks) {
-    // 1. האם יש למשימה אחראי מוגדר עם אימייל?
-    if (!task.assigneeId) continue;
-    const assignee = workers.find(w => w.id === task.assigneeId);
-    if (!assignee || !assignee.email) continue;
-
-    // 2. האם הוגדר תזמון תזכורת?
-    const timing = task.reminderTiming || 'none';
-    if (timing === 'none') continue;
-
-    // 3. מציאת הביצוע האחרון וחישוב תאריך היעד הבא
-    const last = completions[task.id];
-    if (!last || !last.date) continue; // אם מעולם לא בוצע, כרגע לא נשלח התראה
-
-    const lastDate = new Date(last.date);
-    lastDate.setHours(0, 0, 0, 0);
-    
-    // הוספת ימים (תדירות בשבועות * 7 ימים)
-    const nextDueDate = new Date(lastDate.getTime() + task.freq * 7 * 24 * 60 * 60 * 1000);
-    
-    // חישוב ההפרש בימים בין היום לתאריך היעד
-    const diffTime = nextDueDate.getTime() - today.getTime();
-    const daysRemaining = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-
-    // 4. לוגיקת שליחת התזכורת בהתאם לבחירה בטופס
-    let shouldSend = false;
-    
-    // אם המשימה באיחור (עבר תאריך היעד) - נשלח התראה בכל מקרה
-    if (daysRemaining <= 0) {
-        shouldSend = true;
-    } else {
-        // אם המשימה עתידית, נבדוק אם הגענו לנקודת הזמן הספציפית לתזכורת
-        if (timing === '1_day_before' && daysRemaining === 1) shouldSend = true;
-        else if (timing === '3_days_before' && daysRemaining === 3) shouldSend = true;
-        else if (timing === '1_week_before' && daysRemaining === 7) shouldSend = true;
+  for (const { task, dueStr } of toSend) {
+    const assignee = staff.find(s => s.id === task.assigneeId);
+    if (!assignee || !assignee.email) {
+      console.log(`Skipping task "${task.name}" — assignee has no email.`);
+      continue;
     }
-
-    if (!shouldSend) continue;
-
-    // 5. הכנת הנתונים ושליחת המייל
     const device = devices.find(d => d.id === task.deviceId);
-    const daysOverdue = daysRemaining < 0 ? Math.abs(daysRemaining) : 0;
 
     const templateParams = {
       to_email: assignee.email,
@@ -84,36 +103,50 @@ async function main() {
       task_name: task.name,
       device_name: device ? device.name : 'כללי (ללא מכשיר)',
       freq_label: freqLabel(task.freq),
-      days_overdue: daysOverdue,
-      last_done_date: lastDate.toLocaleDateString('he-IL'),
-      instructions: task.instructions || 'אין הנחיות מיוחדות'
+      due_date: new Date(dueStr).toLocaleDateString('he-IL'),
+      timing_label: reminderTimingLabel(task.reminderDaysBefore),
+      instructions: task.instructions || ''
     };
 
-    console.log(`Sending reminder for "${task.name}" to ${assignee.email}... (Days remaining to target: ${daysRemaining})`);
+    console.log(`Sending reminder for "${task.name}" to ${assignee.email} (due ${dueStr})...`);
 
-    try {
-      const emailRes = await fetch('https://api.emailjs.com/api/v1.0/email/send', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          service_id: EMAILJS_SERVICE_ID,
-          template_id: EMAILJS_TEMPLATE_ID,
-          user_id: EMAILJS_PUBLIC_KEY,
-          accessToken: EMAILJS_PRIVATE_KEY,
-          template_params: templateParams
-        })
-      });
+    const res = await fetch('https://api.emailjs.com/api/v1.0/email/send', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        service_id: EMAILJS_SERVICE_ID,
+        template_id: EMAILJS_TEMPLATE_ID,
+        user_id: EMAILJS_PUBLIC_KEY,
+        accessToken: EMAILJS_PRIVATE_KEY,
+        template_params: templateParams
+      })
+    });
 
-      if (!emailRes.ok) {
-        const err = await emailRes.text();
-        console.error('EmailJS Error:', err);
-      } else {
-        console.log('Email sent successfully!');
-      }
-    } catch (e) {
-      console.error("Failed to send email", e);
+    if (!res.ok) {
+      const text = await res.text();
+      console.error(`Failed to send for task "${task.name}": ${res.status} ${text}`);
+      continue; // don't mark as sent if it failed
+    }
+
+    console.log(`Sent reminder for "${task.name}".`);
+    task.lastReminderSentFor = dueStr;
+    anyChanges = true;
+  }
+
+  if (anyChanges) {
+    console.log('Writing back updated state (lastReminderSentFor markers)...');
+    const putRes = await fetch(stateUrl, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(state)
+    });
+    if (!putRes.ok) {
+      console.error(`Failed to write back state: ${putRes.status} ${await putRes.text()}`);
     }
   }
 }
 
-main();
+main().catch(err => {
+  console.error(err);
+  process.exit(1);
+});
