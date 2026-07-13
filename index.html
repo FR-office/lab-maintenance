@@ -474,14 +474,16 @@ function renderAllTasks() {
   document.getElementById('all-tasks-list').innerHTML = html;
 }
 
+let currentHistorySorted = [];
 function renderHistory() {
   const arr = Array.isArray(historyLog) ? historyLog : Object.values(historyLog || {});
-  const sorted = [...arr].sort((a, b) => new Date(b.date) - new Date(a.date));
+  const sorted = [...arr].sort((a, b) => new Date(b.date) - new Date(a.date)).slice(0, 80);
+  currentHistorySorted = sorted;
   let html = '';
   if (!sorted.length) {
     html = `<div class="empty"><div class="empty-icon">📋</div>אין היסטוריה עדיין</div>`;
   } else {
-    sorted.slice(0, 80).forEach(h => {
+    sorted.forEach((h, idx) => {
       const task = state.tasks.find(t => t.id === h.taskId);
       const dev = state.devices.find(d => d.id === task?.deviceId);
       html += `<div class="history-row">
@@ -489,12 +491,32 @@ function renderHistory() {
           <div class="history-name">${task?.name || h.taskName || 'משימה'}</div>
           <div class="history-meta">${dev ? dev.name + ' · ' : ''}👤 ${h.worker}${h.notes ? ' · ' + h.notes : ''}</div>
         </div>
-        <div style="font-size:12px;color:#888;text-align:left">${new Date(h.date).toLocaleDateString('he-IL')}</div>
+        <div style="display:flex;align-items:center;gap:8px">
+          <div style="font-size:12px;color:#888;text-align:left">${new Date(h.date).toLocaleDateString('he-IL')}</div>
+          <button class="btn-action danger" style="padding:4px 8px" onclick="deleteHistoryEntry(${idx})" title="מחק רשומה">🗑</button>
+        </div>
       </div>`;
     });
   }
   document.getElementById('history-list').innerHTML = html;
 }
+
+window.deleteHistoryEntry = async function(idx) {
+  const entry = currentHistorySorted[idx];
+  if (!entry) return;
+  if (!confirm('למחוק את רשומת הביצוע הזו מההיסטוריה? פעולה זו אינה משנה את "תאריך הביצוע האחרון" של המשימה (אם רוצים לשנות גם אותו, יש להשתמש ב"בטל סימון" מתוך המשימה עצמה).')) return;
+  const arr = Array.isArray(historyLog) ? historyLog : Object.values(historyLog || {});
+  const pos = arr.indexOf(entry);
+  if (pos > -1) arr.splice(pos, 1);
+  historyLog = arr;
+  try {
+    await saveHistory();
+    renderHistory();
+    showToast('✓ נמחק מההיסטוריה');
+  } catch(e) {
+    alert('שגיאה במחיקה — בדקי חיבור לאינטרנט ונסי שוב');
+  }
+};
 
 function renderManage() {
   const dhtml = state.devices.map(d => `
