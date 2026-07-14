@@ -191,7 +191,13 @@ body{font-family:'Heebo',sans-serif;background:#f5f5f3;color:#1a1a1a;min-height:
         <option>החלפת חומר</option><option>שמן / סיכה</option><option>עדכון תוכנה</option><option>אחר</option>
       </select>
     </div>
-    <div class="form-group"><label>תדירות</label>
+    <div class="form-group"><label>סוג לו"ז</label>
+      <select id="task-freqtype-select" onchange="onFreqTypeChange()">
+        <option value="scheduled">לוח זמנים קבוע (תדירות)</option>
+        <option value="asneeded">לפי הצורך (ללא תדירות קבועה)</option>
+      </select>
+    </div>
+    <div class="form-group" id="freq-row"><label>תדירות</label>
       <select id="task-freq-select">
         <option value="1">כל שבוע</option>
         <option value="2">כל שבועיים</option>
@@ -199,6 +205,23 @@ body{font-family:'Heebo',sans-serif;background:#f5f5f3;color:#1a1a1a;min-height:
         <option value="8">כל חודשיים (~8 שב׳)</option>
         <option value="13">כל רבעון (~13 שב׳)</option>
       </select>
+    </div>
+    <div class="form-group" id="weekday-row">
+      <label>יום קבוע בשבוע (אופציונלי)</label>
+      <select id="task-weekday-select">
+        <option value="">— לא קבוע (לפי תאריך הביצוע בפועל) —</option>
+        <option value="0">ראשון</option>
+        <option value="1">שני</option>
+        <option value="2">שלישי</option>
+        <option value="3">רביעי</option>
+        <option value="4">חמישי</option>
+        <option value="5">שישי</option>
+        <option value="6">שבת</option>
+      </select>
+    </div>
+    <div class="form-group" id="maxinterval-row" style="display:none">
+      <label>מרווח בטיחות מקסימלי בימים (אופציונלי)</label>
+      <input type="number" id="task-maxinterval" min="1" placeholder="לדוגמה: 30 — אם עברו יותר, המשימה תסומן כבאיחור">
     </div>
     <div class="form-group"><label>הוראות ביצוע (אופציונלי)</label><textarea id="task-instructions" placeholder="שלבים, חומרים נדרשים..."></textarea></div>
     <div class="modal-btns">
@@ -302,36 +325,78 @@ function getWeekNum() {
 function weeksDiff(w1, w2) {
   return Math.round((new Date(w2) - new Date(w1)) / (7 * 86400000));
 }
-function isDue(task) {
-  const last = state.completions[task.id];
-  if (!last) return true;
-  // Calculate from actual completion date (not week start) for early completions
-  const daysSince = (Date.now() - new Date(last.date)) / 86400000;
-  return daysSince >= task.freq * 7;
-}
-function isDoneThisWeek(task) {
-  // "done recently" = completed within the last 7 days (for weekly) or within current cycle
-  const last = state.completions[task.id];
-  if (!last) return false;
-  const daysSince = (Date.now() - new Date(last.date)) / 86400000;
-  return daysSince < task.freq * 7;
-}
-function isOverdue(task) {
-  const last = state.completions[task.id];
-  if (!last) return false;
-  const daysSince = (Date.now() - new Date(last.date)) / 86400000;
-  // Overdue = more than 1 extra cycle has passed
-  return daysSince > task.freq * 7 * 1.5;
+function hasFixedWeekday(task) {
+  return task.fixedWeekday !== undefined && task.fixedWeekday !== null && task.fixedWeekday !== '';
 }
 function nextDueDate(task) {
   const last = state.completions[task.id];
   if (!last) return null;
-  const d = new Date(last.date);
+  if (task.freqType === 'asneeded') return null; // no fixed schedule concept
+  const lastDate = new Date(last.date);
+  if (hasFixedWeekday(task)) {
+    // Anchor to the same weekday every cycle, regardless of which day it was actually completed on.
+    const day = lastDate.getDay();
+    const diffToMonday = day === 0 ? -6 : 1 - day;
+    const weekStart = new Date(lastDate);
+    weekStart.setDate(weekStart.getDate() + diffToMonday);
+    weekStart.setHours(0, 0, 0, 0);
+    const targetWeekStart = new Date(weekStart);
+    targetWeekStart.setDate(targetWeekStart.getDate() + task.freq * 7);
+    const fw = parseInt(task.fixedWeekday);
+    const offset = fw === 0 ? 6 : fw - 1; // days after Monday
+    const due = new Date(targetWeekStart);
+    due.setDate(due.getDate() + offset);
+    return due;
+  }
+  const d = new Date(lastDate);
   d.setDate(d.getDate() + task.freq * 7);
   return d;
 }
+function isDue(task) {
+  const last = state.completions[task.id];
+  if (task.freqType === 'asneeded') {
+    if (!last) return false; // no baseline yet — don't nag until it's been done at least once
+    return isOverdue(task); // "due" only once it has crossed its safety margin
+  }
+  if (!last) return true;
+  const due = nextDueDate(task);
+  if (!due) return true;
+  return Date.now() >= due.getTime();
+}
+function isDoneThisWeek(task) {
+  const last = state.completions[task.id];
+  if (!last) return false;
+  if (task.freqType === 'asneeded') return false; // as-needed tasks just disappear from "pending" until overdue again
+  const due = nextDueDate(task);
+  if (!due) return false;
+  return Date.now() < due.getTime();
+}
+function isOverdue(task) {
+  const last = state.completions[task.id];
+  if (!last) return false;
+  if (task.freqType === 'asneeded') {
+    if (!task.maxIntervalDays) return false; // no safety margin defined — never auto-flagged
+    const daysSince = (Date.now() - new Date(last.date)) / 86400000;
+    return daysSince > task.maxIntervalDays;
+  }
+  const due = nextDueDate(task);
+  if (!due) return false;
+  const graceMs = task.freq * 7 * 0.5 * 86400000; // more than half a cycle past the due date
+  return Date.now() > due.getTime() + graceMs;
+}
 function freqLabel(f) {
   return f===1?'שבועי':f===2?'דו-שבועי':f===4?'חודשי':f===8?'חודשיים':`כל ${f} שב'`;
+}
+function weekdayName(d) {
+  return ['ראשון','שני','שלישי','רביעי','חמישי','שישי','שבת'][parseInt(d)];
+}
+function scheduleLabel(t) {
+  if (t.freqType === 'asneeded') {
+    return t.maxIntervalDays ? `לפי הצורך (מקס׳ ${t.maxIntervalDays} ימים)` : 'לפי הצורך';
+  }
+  let lbl = freqLabel(t.freq);
+  if (hasFixedWeekday(t)) lbl += ' · יום ' + weekdayName(t.fixedWeekday);
+  return lbl;
 }
 function reminderTimingLabel(days) {
   const d = parseInt(days) || 0;
@@ -441,7 +506,7 @@ function taskCardHTML(t, done, overdue) {
       <div class="task-meta">
         ${dev ? `<span class="badge badge-device">${dev.name}</span>` : `<span class="badge badge-general">🏠 כללי</span>`}
         <span class="badge badge-type">${t.type}</span>
-        <span style="color:#aaa">${freqLabel(t.freq)}</span>
+        <span style="color:#aaa">${scheduleLabel(t)}</span>
         ${assignee ? `<span class="badge badge-assignee">👤 ${assignee.name}</span>` : ''}
         ${overdue ? `<span class="badge badge-overdue">באיחור</span>` : ''}
         ${done ? `<span class="badge badge-done">✓ בוצע</span>` : ''}
@@ -554,7 +619,7 @@ function renderManage() {
         <div class="task-meta">
           ${dev ? `<span class="badge badge-device">${dev.name}</span>` : `<span class="badge badge-general">🏠 כללי</span>`}
           <span class="badge badge-type">${t.type}</span>
-          <span style="color:#aaa">${freqLabel(t.freq)}</span>
+          <span style="color:#aaa">${scheduleLabel(t)}</span>
           ${assignee ? `<span class="badge badge-assignee">👤 ${assignee.name}${t.emailReminder ? ' · 📧 ' + reminderTimingLabel(t.reminderDaysBefore) : ''}</span>` : ''}
         </div>
         ${t.instructions ? `<div class="task-instructions">${t.instructions}</div>` : ''}
@@ -753,6 +818,13 @@ window.quickDoneGo = function() {
   startDone(id);
 };
 
+window.onFreqTypeChange = function() {
+  const isAsNeeded = document.getElementById('task-freqtype-select').value === 'asneeded';
+  document.getElementById('freq-row').style.display = isAsNeeded ? 'none' : 'block';
+  document.getElementById('weekday-row').style.display = isAsNeeded ? 'none' : 'block';
+  document.getElementById('maxinterval-row').style.display = isAsNeeded ? 'block' : 'none';
+};
+
 window.openTaskModal = function(id) {
   editingTaskId = id || null;
   const sel = document.getElementById('task-device-select');
@@ -769,7 +841,10 @@ window.openTaskModal = function(id) {
     document.getElementById('task-reminder-days').value = t.reminderDaysBefore != null ? String(t.reminderDaysBefore) : '0';
     document.getElementById('reminder-timing-row').style.display = t.emailReminder ? 'block' : 'none';
     document.getElementById('task-type-select').value = t.type;
-    document.getElementById('task-freq-select').value = t.freq;
+    document.getElementById('task-freqtype-select').value = t.freqType === 'asneeded' ? 'asneeded' : 'scheduled';
+    document.getElementById('task-freq-select').value = t.freq || 1;
+    document.getElementById('task-weekday-select').value = t.fixedWeekday != null ? String(t.fixedWeekday) : '';
+    document.getElementById('task-maxinterval').value = t.maxIntervalDays || '';
     document.getElementById('task-instructions').value = t.instructions || '';
   } else {
     document.getElementById('task-modal-title').textContent = 'הוסף משימה';
@@ -779,8 +854,13 @@ window.openTaskModal = function(id) {
     document.getElementById('task-reminder-check').checked = false;
     document.getElementById('task-reminder-days').value = '0';
     document.getElementById('reminder-timing-row').style.display = 'none';
+    document.getElementById('task-freqtype-select').value = 'scheduled';
+    document.getElementById('task-freq-select').value = '1';
+    document.getElementById('task-weekday-select').value = '';
+    document.getElementById('task-maxinterval').value = '';
     document.getElementById('task-instructions').value = '';
   }
+  onFreqTypeChange();
   const tbtn = document.querySelector('#task-modal .btn-primary');
   tbtn.textContent = 'שמור'; tbtn.disabled = false;
   document.getElementById('task-modal').style.display = 'flex';
@@ -793,6 +873,9 @@ window.saveTask = async function() {
   const btn = document.querySelector('#task-modal .btn-primary');
   btn.textContent = 'שומר...'; btn.disabled = true;
   try {
+    const freqType = document.getElementById('task-freqtype-select').value;
+    const weekdayVal = document.getElementById('task-weekday-select').value;
+    const maxIntervalVal = document.getElementById('task-maxinterval').value;
     const data = {
       name,
       deviceId: document.getElementById('task-device-select').value,
@@ -800,7 +883,10 @@ window.saveTask = async function() {
       emailReminder: document.getElementById('task-reminder-check').checked,
       reminderDaysBefore: parseInt(document.getElementById('task-reminder-days').value),
       type: document.getElementById('task-type-select').value,
-      freq: parseInt(document.getElementById('task-freq-select').value),
+      freqType,
+      freq: parseInt(document.getElementById('task-freq-select').value) || 1,
+      fixedWeekday: freqType === 'asneeded' || weekdayVal === '' ? '' : parseInt(weekdayVal),
+      maxIntervalDays: freqType === 'asneeded' && maxIntervalVal ? parseInt(maxIntervalVal) : '',
       instructions: document.getElementById('task-instructions').value.trim()
     };
     if (editingTaskId) {
