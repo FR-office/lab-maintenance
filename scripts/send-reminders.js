@@ -31,13 +31,35 @@ function reminderTimingLabel(days) {
   return `${d} ימים לפני`;
 }
 
-// Mirrors nextDueDate() in the web app: due date = last completion date + freq weeks.
-// Tasks that were never completed have no computable due date, so they're skipped
-// (same as the app's own logic — a task only gets a due date once it has a baseline).
+function hasFixedWeekday(task) {
+  return task.fixedWeekday !== undefined && task.fixedWeekday !== null && task.fixedWeekday !== '';
+}
+
+// Mirrors nextDueDate() in the web app: due date = last completion date + freq weeks,
+// or — if the task has a fixed weekday set — the same weekday every cycle.
+// "As-needed" tasks and never-completed tasks have no computable due date, so
+// day-before/on-due-date email reminders don't apply to them (they're skipped here;
+// as-needed tasks should rely on the app's own overdue safety-margin flag instead).
 function nextDueDate(task, completions) {
   const last = completions[task.id];
   if (!last) return null;
-  const d = new Date(last.date);
+  if (task.freqType === 'asneeded') return null;
+  const lastDate = new Date(last.date);
+  if (hasFixedWeekday(task)) {
+    const day = lastDate.getDay();
+    const diffToMonday = day === 0 ? -6 : 1 - day;
+    const weekStart = new Date(lastDate);
+    weekStart.setDate(weekStart.getDate() + diffToMonday);
+    weekStart.setHours(0, 0, 0, 0);
+    const targetWeekStart = new Date(weekStart);
+    targetWeekStart.setDate(targetWeekStart.getDate() + task.freq * 7);
+    const fw = parseInt(task.fixedWeekday);
+    const offset = fw === 0 ? 6 : fw - 1;
+    const due = new Date(targetWeekStart);
+    due.setDate(due.getDate() + offset);
+    return due;
+  }
+  const d = new Date(lastDate);
   d.setDate(d.getDate() + task.freq * 7);
   return d;
 }
