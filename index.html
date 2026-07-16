@@ -225,6 +225,7 @@ body{font-family:'Heebo',sans-serif;background:#f5f5f3;color:#1a1a1a;min-height:
         <option value="13">כל רבעון (~13 שב׳)</option>
         <option value="26">כל חצי שנה (~26 שב׳)</option>
         <option value="52">כל שנה (~52 שב׳)</option>
+        <option value="104">כל שנתיים (~104 שב׳)</option>
       </select>
     </div>
     <div class="form-group" id="weekday-row">
@@ -440,7 +441,7 @@ function isOverdue(task) {
   return Date.now() > due.getTime() + graceMs;
 }
 function freqLabel(f) {
-  return f===1?'שבועי':f===2?'דו-שבועי':f===4?'חודשי':f===8?'חודשיים':f===13?'רבעוני':f===26?'חצי שנתי':f===52?'שנתי':`כל ${f} שב'`;
+  return f===1?'שבועי':f===2?'דו-שבועי':f===4?'חודשי':f===8?'חודשיים':f===13?'רבעוני':f===26?'חצי שנתי':f===52?'שנתי':f===104?'דו-שנתי':`כל ${f} שב'`;
 }
 function weekdayName(d) {
   return ['ראשון','שני','שלישי','רביעי','חמישי','שישי','שבת'][parseInt(d)];
