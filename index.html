@@ -37,6 +37,7 @@ body{font-family:'Heebo',sans-serif;background:#f5f5f3;color:#1a1a1a;min-height:
 .badge-device{background:#e1f5ee;color:#0f6e56}
 .badge-general{background:#fdf1de;color:#a5680f}
 .badge-assignee{background:#eaf2fd;color:#1a5fb4}
+.badge-admin{background:#f3e8fd;color:#7c3aed}
 .checkbox-row{display:flex;align-items:center;gap:8px}
 .checkbox-row input{width:16px;height:16px;cursor:pointer;flex-shrink:0}
 .checkbox-row label{margin:0;font-size:13px;color:#444;cursor:pointer}
@@ -113,6 +114,11 @@ body{font-family:'Heebo',sans-serif;background:#f5f5f3;color:#1a1a1a;min-height:
     <div class="filter-row">
       <select id="filter-device" onchange="renderAllTasks()"><option value="">כל המכשירים</option></select>
       <select id="filter-type" onchange="renderAllTasks()"><option value="">כל הסוגים</option></select>
+      <select id="filter-category" onchange="renderAllTasks()">
+        <option value="">כל הקטגוריות</option>
+        <option value="lab">מעבדתי</option>
+        <option value="admin">מנהלתי</option>
+      </select>
     </div>
     <div id="all-tasks-list"></div>
   </div>
@@ -176,14 +182,20 @@ body{font-family:'Heebo',sans-serif;background:#f5f5f3;color:#1a1a1a;min-height:
     </div>
     <div class="form-group" id="reminder-timing-row" style="display:none">
       <label>מתי לשלוח את התזכורת?</label>
-      <select id="task-reminder-days">
+      <select id="task-reminder-days" onchange="onReminderModeChange()">
         <option value="0">ביום היעד עצמו</option>
         <option value="1">יום אחד לפני היעד</option>
         <option value="2">יומיים לפני היעד</option>
         <option value="3">3 ימים לפני היעד</option>
         <option value="7">שבוע לפני היעד</option>
         <option value="14">שבועיים לפני היעד</option>
+        <option value="30">חודש לפני היעד</option>
+        <option value="custom">תאריך מותאם אישית...</option>
       </select>
+    </div>
+    <div class="form-group" id="reminder-customdate-row" style="display:none">
+      <label>תאריך התזכורת</label>
+      <input type="date" id="task-reminder-customdate">
     </div>
     <div class="form-group"><label>סוג פעולה</label>
       <select id="task-type-select">
@@ -191,10 +203,17 @@ body{font-family:'Heebo',sans-serif;background:#f5f5f3;color:#1a1a1a;min-height:
         <option>החלפת חומר</option><option>שמן / סיכה</option><option>עדכון תוכנה</option><option>אחר</option>
       </select>
     </div>
+    <div class="form-group"><label>קטגוריה</label>
+      <select id="task-category-select">
+        <option value="lab">מעבדתי</option>
+        <option value="admin">מנהלתי (למשל חידוש היתרים)</option>
+      </select>
+    </div>
     <div class="form-group"><label>סוג לו"ז</label>
       <select id="task-freqtype-select" onchange="onFreqTypeChange()">
         <option value="scheduled">לוח זמנים קבוע (תדירות)</option>
         <option value="asneeded">לפי הצורך (ללא תדירות קבועה)</option>
+        <option value="once">חד פעמי (תאריך יעד ללא חזרה)</option>
       </select>
     </div>
     <div class="form-group" id="freq-row"><label>תדירות</label>
@@ -204,6 +223,8 @@ body{font-family:'Heebo',sans-serif;background:#f5f5f3;color:#1a1a1a;min-height:
         <option value="4">כל חודש (~4 שב׳)</option>
         <option value="8">כל חודשיים (~8 שב׳)</option>
         <option value="13">כל רבעון (~13 שב׳)</option>
+        <option value="26">כל חצי שנה (~26 שב׳)</option>
+        <option value="52">כל שנה (~52 שב׳)</option>
       </select>
     </div>
     <div class="form-group" id="weekday-row">
@@ -218,6 +239,10 @@ body{font-family:'Heebo',sans-serif;background:#f5f5f3;color:#1a1a1a;min-height:
         <option value="5">שישי</option>
         <option value="6">שבת</option>
       </select>
+    </div>
+    <div class="form-group" id="duedate-row">
+      <label id="duedate-label">תאריך יעד הבא (אופציונלי — לתאריך ידוע מראש, כמו חידוש היתר בעוד שנה)</label>
+      <input type="date" id="task-duedate-input">
     </div>
     <div class="form-group" id="maxinterval-row" style="display:none">
       <label>מרווח בטיחות מקסימלי בימים (אופציונלי)</label>
@@ -330,8 +355,19 @@ function hasFixedWeekday(task) {
 }
 function nextDueDate(task) {
   const last = state.completions[task.id];
-  if (!last) return null;
   if (task.freqType === 'asneeded') return null; // no fixed schedule concept
+
+  if (task.freqType === 'once') {
+    if (last) return null; // one-time task already completed — never due again
+    return task.dueDateOverride ? new Date(task.dueDateOverride + 'T00:00:00') : null;
+  }
+
+  // 'scheduled' (default)
+  if (!last) {
+    // No completion yet — if a known due date was set in advance (e.g. an annual
+    // permit renewal), anchor to it instead of treating the task as due immediately.
+    return task.dueDateOverride ? new Date(task.dueDateOverride + 'T00:00:00') : null;
+  }
   const lastDate = new Date(last.date);
   if (hasFixedWeekday(task)) {
     // Anchor to the same weekday every cycle, regardless of which day it was actually completed on.
@@ -358,7 +394,18 @@ function isDue(task) {
     if (!last) return false; // no baseline yet — don't nag until it's been done at least once
     return isOverdue(task); // "due" only once it has crossed its safety margin
   }
-  if (!last) return true;
+  if (task.freqType === 'once') {
+    if (last) return false; // already done, one-time — never due again
+    const due = nextDueDate(task);
+    if (!due) return true; // no due date set (shouldn't normally happen) — fall back to always due
+    return Date.now() >= due.getTime();
+  }
+  // 'scheduled'
+  if (!last) {
+    const due = nextDueDate(task); // only non-null if dueDateOverride was set
+    if (!due) return true; // brand new task with no known due date — show as pending immediately
+    return Date.now() >= due.getTime();
+  }
   const due = nextDueDate(task);
   if (!due) return true;
   return Date.now() >= due.getTime();
@@ -366,43 +413,62 @@ function isDue(task) {
 function isDoneThisWeek(task) {
   const last = state.completions[task.id];
   if (!last) return false;
-  if (task.freqType === 'asneeded') return false; // as-needed tasks just disappear from "pending" until overdue again
+  if (task.freqType === 'asneeded' || task.freqType === 'once') return false;
   const due = nextDueDate(task);
   if (!due) return false;
   return Date.now() < due.getTime();
 }
 function isOverdue(task) {
   const last = state.completions[task.id];
-  if (!last) return false;
   if (task.freqType === 'asneeded') {
-    if (!task.maxIntervalDays) return false; // no safety margin defined — never auto-flagged
+    if (!last || !task.maxIntervalDays) return false; // no baseline or no safety margin — never auto-flagged
     const daysSince = (Date.now() - new Date(last.date)) / 86400000;
     return daysSince > task.maxIntervalDays;
   }
+  if (task.freqType === 'once') {
+    if (last) return false; // done — no longer overdue
+    const due = nextDueDate(task);
+    if (!due) return false;
+    const graceMs = 3 * 86400000; // flat 3-day grace period for one-time tasks
+    return Date.now() > due.getTime() + graceMs;
+  }
+  // 'scheduled'
+  if (!last && !task.dueDateOverride) return false; // no baseline at all — nothing to be "overdue" against
   const due = nextDueDate(task);
   if (!due) return false;
   const graceMs = task.freq * 7 * 0.5 * 86400000; // more than half a cycle past the due date
   return Date.now() > due.getTime() + graceMs;
 }
 function freqLabel(f) {
-  return f===1?'שבועי':f===2?'דו-שבועי':f===4?'חודשי':f===8?'חודשיים':`כל ${f} שב'`;
+  return f===1?'שבועי':f===2?'דו-שבועי':f===4?'חודשי':f===8?'חודשיים':f===13?'רבעוני':f===26?'חצי שנתי':f===52?'שנתי':`כל ${f} שב'`;
 }
 function weekdayName(d) {
   return ['ראשון','שני','שלישי','רביעי','חמישי','שישי','שבת'][parseInt(d)];
+}
+function fmtDate(iso) {
+  return new Date(iso + 'T00:00:00').toLocaleDateString('he-IL');
 }
 function scheduleLabel(t) {
   if (t.freqType === 'asneeded') {
     return t.maxIntervalDays ? `לפי הצורך (מקס׳ ${t.maxIntervalDays} ימים)` : 'לפי הצורך';
   }
+  if (t.freqType === 'once') {
+    return t.dueDateOverride ? `חד פעמי · יעד ${fmtDate(t.dueDateOverride)}` : 'חד פעמי';
+  }
   let lbl = freqLabel(t.freq);
   if (hasFixedWeekday(t)) lbl += ' · יום ' + weekdayName(t.fixedWeekday);
+  if (t.dueDateOverride && !state.completions[t.id]) lbl += ' · יעד ' + fmtDate(t.dueDateOverride);
   return lbl;
 }
-function reminderTimingLabel(days) {
+function reminderTimingLabel(days, customDate) {
+  if (days === 'custom') return customDate ? `בתאריך ${fmtDate(customDate)}` : 'תאריך מותאם אישית';
   const d = parseInt(days) || 0;
   if (d === 0) return 'ביום היעד';
   if (d === 1) return 'יום לפני';
   if (d === 2) return 'יומיים לפני';
+  if (d === 7) return 'שבוע לפני';
+  if (d === 14) return 'שבועיים לפני';
+  if (d === 30) return 'חודש לפני';
   return `${d} ימים לפני`;
 }
 function showToast(msg) {
@@ -506,6 +572,7 @@ function taskCardHTML(t, done, overdue) {
       <div class="task-meta">
         ${dev ? `<span class="badge badge-device">${dev.name}</span>` : `<span class="badge badge-general">🏠 כללי</span>`}
         <span class="badge badge-type">${t.type}</span>
+        ${t.category === 'admin' ? `<span class="badge badge-admin">📋 מנהלתי</span>` : ''}
         <span style="color:#aaa">${scheduleLabel(t)}</span>
         ${assignee ? `<span class="badge badge-assignee">👤 ${assignee.name}</span>` : ''}
         ${overdue ? `<span class="badge badge-overdue">באיחור</span>` : ''}
@@ -527,7 +594,8 @@ function taskCardHTML(t, done, overdue) {
 function renderAllTasks() {
   const devSel = document.getElementById('filter-device');
   const typeSel = document.getElementById('filter-type');
-  const curDev = devSel.value, curType = typeSel.value;
+  const catSel = document.getElementById('filter-category');
+  const curDev = devSel.value, curType = typeSel.value, curCat = catSel.value;
   const types = [...new Set(state.tasks.map(t => t.type))];
   devSel.innerHTML = '<option value="">כל המכשירים</option><option value="__none__"' + (curDev==='__none__'?' selected':'') + '>ללא מכשיר (כללי)</option>' + state.devices.map(d => `<option value="${d.id}"${curDev===d.id?' selected':''}>${d.name}</option>`).join('');
   typeSel.innerHTML = '<option value="">כל הסוגים</option>' + types.map(ty => `<option value="${ty}"${curType===ty?' selected':''}>${ty}</option>`).join('');
@@ -535,6 +603,7 @@ function renderAllTasks() {
   if (curDev === '__none__') filtered = filtered.filter(t => !t.deviceId);
   else if (curDev) filtered = filtered.filter(t => t.deviceId === curDev);
   if (curType) filtered = filtered.filter(t => t.type === curType);
+  if (curCat) filtered = filtered.filter(t => (t.category || 'lab') === curCat);
   const html = filtered.map(t => taskCardHTML(t, isDoneThisWeek(t), isOverdue(t))).join('') || `<div class="empty">אין משימות</div>`;
   document.getElementById('all-tasks-list').innerHTML = html;
 }
@@ -619,8 +688,9 @@ function renderManage() {
         <div class="task-meta">
           ${dev ? `<span class="badge badge-device">${dev.name}</span>` : `<span class="badge badge-general">🏠 כללי</span>`}
           <span class="badge badge-type">${t.type}</span>
+          ${t.category === 'admin' ? `<span class="badge badge-admin">📋 מנהלתי</span>` : ''}
           <span style="color:#aaa">${scheduleLabel(t)}</span>
-          ${assignee ? `<span class="badge badge-assignee">👤 ${assignee.name}${t.emailReminder ? ' · 📧 ' + reminderTimingLabel(t.reminderDaysBefore) : ''}</span>` : ''}
+          ${assignee ? `<span class="badge badge-assignee">👤 ${assignee.name}${t.emailReminder ? ' · 📧 ' + reminderTimingLabel(t.reminderDaysBefore, t.reminderCustomDate) : ''}</span>` : ''}
         </div>
         ${t.instructions ? `<div class="task-instructions">${t.instructions}</div>` : ''}
       </div>
@@ -819,10 +889,21 @@ window.quickDoneGo = function() {
 };
 
 window.onFreqTypeChange = function() {
-  const isAsNeeded = document.getElementById('task-freqtype-select').value === 'asneeded';
-  document.getElementById('freq-row').style.display = isAsNeeded ? 'none' : 'block';
-  document.getElementById('weekday-row').style.display = isAsNeeded ? 'none' : 'block';
+  const ft = document.getElementById('task-freqtype-select').value;
+  const isAsNeeded = ft === 'asneeded';
+  const isOnce = ft === 'once';
+  document.getElementById('freq-row').style.display = (isAsNeeded || isOnce) ? 'none' : 'block';
+  document.getElementById('weekday-row').style.display = (isAsNeeded || isOnce) ? 'none' : 'block';
   document.getElementById('maxinterval-row').style.display = isAsNeeded ? 'block' : 'none';
+  document.getElementById('duedate-row').style.display = isAsNeeded ? 'none' : 'block';
+  document.getElementById('duedate-label').textContent = isOnce
+    ? 'תאריך יעד'
+    : 'תאריך יעד הבא (אופציונלי — לתאריך ידוע מראש, כמו חידוש היתר בעוד שנה)';
+};
+
+window.onReminderModeChange = function() {
+  const isCustom = document.getElementById('task-reminder-days').value === 'custom';
+  document.getElementById('reminder-customdate-row').style.display = isCustom ? 'block' : 'none';
 };
 
 window.openTaskModal = function(id) {
@@ -838,12 +919,20 @@ window.openTaskModal = function(id) {
     sel.value = t.deviceId || '';
     asel.value = t.assigneeId || '';
     document.getElementById('task-reminder-check').checked = !!t.emailReminder;
-    document.getElementById('task-reminder-days').value = t.reminderDaysBefore != null ? String(t.reminderDaysBefore) : '0';
+    if (t.reminderDaysBefore === 'custom') {
+      document.getElementById('task-reminder-days').value = 'custom';
+      document.getElementById('task-reminder-customdate').value = t.reminderCustomDate || '';
+    } else {
+      document.getElementById('task-reminder-days').value = t.reminderDaysBefore != null ? String(t.reminderDaysBefore) : '0';
+      document.getElementById('task-reminder-customdate').value = '';
+    }
     document.getElementById('reminder-timing-row').style.display = t.emailReminder ? 'block' : 'none';
     document.getElementById('task-type-select').value = t.type;
-    document.getElementById('task-freqtype-select').value = t.freqType === 'asneeded' ? 'asneeded' : 'scheduled';
+    document.getElementById('task-category-select').value = t.category === 'admin' ? 'admin' : 'lab';
+    document.getElementById('task-freqtype-select').value = (t.freqType === 'asneeded' || t.freqType === 'once') ? t.freqType : 'scheduled';
     document.getElementById('task-freq-select').value = t.freq || 1;
     document.getElementById('task-weekday-select').value = t.fixedWeekday != null ? String(t.fixedWeekday) : '';
+    document.getElementById('task-duedate-input').value = t.dueDateOverride || '';
     document.getElementById('task-maxinterval').value = t.maxIntervalDays || '';
     document.getElementById('task-instructions').value = t.instructions || '';
   } else {
@@ -853,14 +942,18 @@ window.openTaskModal = function(id) {
     asel.value = '';
     document.getElementById('task-reminder-check').checked = false;
     document.getElementById('task-reminder-days').value = '0';
+    document.getElementById('task-reminder-customdate').value = '';
     document.getElementById('reminder-timing-row').style.display = 'none';
+    document.getElementById('task-category-select').value = 'lab';
     document.getElementById('task-freqtype-select').value = 'scheduled';
     document.getElementById('task-freq-select').value = '1';
     document.getElementById('task-weekday-select').value = '';
+    document.getElementById('task-duedate-input').value = '';
     document.getElementById('task-maxinterval').value = '';
     document.getElementById('task-instructions').value = '';
   }
   onFreqTypeChange();
+  onReminderModeChange();
   const tbtn = document.querySelector('#task-modal .btn-primary');
   tbtn.textContent = 'שמור'; tbtn.disabled = false;
   document.getElementById('task-modal').style.display = 'flex';
@@ -870,22 +963,37 @@ window.openTaskModal = function(id) {
 window.saveTask = async function() {
   const name = document.getElementById('task-name-input').value.trim();
   if (!name) { alert('נא להזין שם משימה'); return; }
+  const freqTypeCheck = document.getElementById('task-freqtype-select').value;
+  const dueDateCheck = document.getElementById('task-duedate-input').value;
+  if (freqTypeCheck === 'once' && !dueDateCheck) {
+    alert('למשימה חד-פעמית יש להזין תאריך יעד');
+    return;
+  }
+  const reminderModeCheck = document.getElementById('task-reminder-days').value;
+  if (document.getElementById('task-reminder-check').checked && reminderModeCheck === 'custom' && !document.getElementById('task-reminder-customdate').value) {
+    alert('נא לבחור תאריך לתזכורת המותאמת אישית');
+    return;
+  }
   const btn = document.querySelector('#task-modal .btn-primary');
   btn.textContent = 'שומר...'; btn.disabled = true;
   try {
     const freqType = document.getElementById('task-freqtype-select').value;
     const weekdayVal = document.getElementById('task-weekday-select').value;
     const maxIntervalVal = document.getElementById('task-maxinterval').value;
+    const reminderMode = document.getElementById('task-reminder-days').value;
     const data = {
       name,
       deviceId: document.getElementById('task-device-select').value,
       assigneeId: document.getElementById('task-assignee-select').value,
       emailReminder: document.getElementById('task-reminder-check').checked,
-      reminderDaysBefore: parseInt(document.getElementById('task-reminder-days').value),
+      reminderDaysBefore: reminderMode === 'custom' ? 'custom' : parseInt(reminderMode),
+      reminderCustomDate: reminderMode === 'custom' ? document.getElementById('task-reminder-customdate').value : '',
       type: document.getElementById('task-type-select').value,
+      category: document.getElementById('task-category-select').value,
       freqType,
       freq: parseInt(document.getElementById('task-freq-select').value) || 1,
-      fixedWeekday: freqType === 'asneeded' || weekdayVal === '' ? '' : parseInt(weekdayVal),
+      fixedWeekday: (freqType === 'asneeded' || freqType === 'once' || weekdayVal === '') ? '' : parseInt(weekdayVal),
+      dueDateOverride: freqType === 'asneeded' ? '' : document.getElementById('task-duedate-input').value,
       maxIntervalDays: freqType === 'asneeded' && maxIntervalVal ? parseInt(maxIntervalVal) : '',
       instructions: document.getElementById('task-instructions').value.trim()
     };
