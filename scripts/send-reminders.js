@@ -20,14 +20,18 @@ function toDateStr(d) {
 }
 
 function freqLabel(f) {
-  return f === 1 ? 'שבועי' : f === 2 ? 'דו-שבועי' : f === 4 ? 'חודשי' : f === 8 ? 'חודשיים' : `כל ${f} שב'`;
+  return f === 1 ? 'שבועי' : f === 2 ? 'דו-שבועי' : f === 4 ? 'חודשי' : f === 8 ? 'חודשיים' : f === 13 ? 'רבעוני' : f === 26 ? 'חצי שנתי' : f === 52 ? 'שנתי' : `כל ${f} שב'`;
 }
 
-function reminderTimingLabel(days) {
+function reminderTimingLabel(days, customDate) {
+  if (days === 'custom') return customDate ? `בתאריך ${customDate}` : 'תאריך מותאם אישית';
   const d = days || 0;
   if (d === 0) return 'ביום היעד';
   if (d === 1) return 'יום לפני';
   if (d === 2) return 'יומיים לפני';
+  if (d === 7) return 'שבוע לפני';
+  if (d === 14) return 'שבועיים לפני';
+  if (d === 30) return 'חודש לפני';
   return `${d} ימים לפני`;
 }
 
@@ -36,14 +40,25 @@ function hasFixedWeekday(task) {
 }
 
 // Mirrors nextDueDate() in the web app: due date = last completion date + freq weeks,
-// or — if the task has a fixed weekday set — the same weekday every cycle.
-// "As-needed" tasks and never-completed tasks have no computable due date, so
-// day-before/on-due-date email reminders don't apply to them (they're skipped here;
-// as-needed tasks should rely on the app's own overdue safety-margin flag instead).
+// or — if the task has a fixed weekday set — the same weekday every cycle. A task
+// with no completion yet uses its dueDateOverride (a known future date, e.g. an
+// annual permit renewal) as the anchor if one was set. "As-needed" tasks and
+// completed "once" tasks have no computable due date, so day-before/on-due-date
+// email reminders don't apply to them.
 function nextDueDate(task, completions) {
   const last = completions[task.id];
-  if (!last) return null;
+
   if (task.freqType === 'asneeded') return null;
+
+  if (task.freqType === 'once') {
+    if (last) return null; // already completed — done forever
+    return task.dueDateOverride ? new Date(task.dueDateOverride + 'T00:00:00') : null;
+  }
+
+  // 'scheduled' (default)
+  if (!last) {
+    return task.dueDateOverride ? new Date(task.dueDateOverride + 'T00:00:00') : null;
+  }
   const lastDate = new Date(last.date);
   if (hasFixedWeekday(task)) {
     const day = lastDate.getDay();
@@ -64,8 +79,51 @@ function nextDueDate(task, completions) {
   return d;
 }
 
+async function sendEmailJs(templateParams) {
+  const res = await fetch('https://api.emailjs.com/api/v1.0/email/send', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      service_id: EMAILJS_SERVICE_ID,
+      template_id: EMAILJS_TEMPLATE_ID,
+      user_id: EMAILJS_PUBLIC_KEY,
+      accessToken: EMAILJS_PRIVATE_KEY,
+      template_params: templateParams
+    })
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`EmailJS error: ${res.status} ${text}`);
+  }
+}
+
 async function main() {
-  if (!FIREBASE_DB_URL || !EMAILJS_SERVICE_ID || !EMAILJS_TEMPLATE_ID || !EMAILJS_PUBLIC_KEY || !EMAILJS_PRIVATE_KEY) {
+  if (!EMAILJS_SERVICE_ID || !EMAILJS_TEMPLATE_ID || !EMAILJS_PUBLIC_KEY || !EMAILJS_PRIVATE_KEY) {
+    console.error('Missing required environment variables/secrets.');
+    process.exit(1);
+  }
+
+  // TEST MODE: if TEST_EMAIL is set (via the workflow_dispatch input), send exactly
+  // one test email to that address using dummy content, and skip all task/Firebase
+  // logic entirely. This is purely to verify the Secrets + EmailJS wiring works.
+  const testEmail = (process.env.TEST_EMAIL || '').trim();
+  if (testEmail) {
+    console.log(`TEST MODE: sending a test email to ${testEmail}...`);
+    await sendEmailJs({
+      to_email: testEmail,
+      to_name: 'בדיקה',
+      task_name: 'משימת בדיקה (טסט)',
+      device_name: 'כללי (ללא מכשיר)',
+      freq_label: 'שבועי',
+      due_date: new Date().toLocaleDateString('he-IL'),
+      timing_label: 'בדיקת אוטומציה',
+      instructions: 'זהו מייל בדיקה בלבד — אם קיבלת אותו, החיבור ל-EmailJS וה-Secrets תקינים.'
+    });
+    console.log('Test email sent successfully.');
+    return;
+  }
+
+  if (!FIREBASE_DB_URL) {
     console.error('Missing required environment variables/secrets.');
     process.exit(1);
   }
@@ -89,8 +147,19 @@ async function main() {
   for (const task of tasks) {
     if (!task.emailReminder || !task.assigneeId) continue;
 
+    if (task.reminderDaysBefore === 'custom') {
+      // Exact calendar-date reminder, independent of due-date calculation.
+      if (!task.reminderCustomDate) continue;
+      const targetStr = task.reminderCustomDate; // already YYYY-MM-DD
+      const cycleKey = 'custom:' + targetStr;
+      if (targetStr !== todayStr) continue;
+      if (task.lastReminderSentFor === cycleKey) continue;
+      toSend.push({ task, dueStr: targetStr, cycleKey });
+      continue;
+    }
+
     const due = nextDueDate(task, completions);
-    if (!due) continue; // never completed yet — no baseline to count from
+    if (!due) continue; // no computable due date (as-needed, completed one-time task, or no baseline/override)
 
     const dueStr = toDateStr(due);
     const daysBefore = task.reminderDaysBefore || 0;
@@ -101,7 +170,7 @@ async function main() {
     if (targetStr !== todayStr) continue; // not the scheduled day yet
     if (task.lastReminderSentFor === dueStr) continue; // already sent for this cycle
 
-    toSend.push({ task, dueStr });
+    toSend.push({ task, dueStr, cycleKey: dueStr });
   }
 
   if (!toSend.length) {
@@ -111,7 +180,7 @@ async function main() {
 
   console.log(`Found ${toSend.length} reminder(s) to send today (${todayStr}).`);
 
-  for (const { task, dueStr } of toSend) {
+  for (const { task, dueStr, cycleKey } of toSend) {
     const assignee = staff.find(s => s.id === task.assigneeId);
     if (!assignee || !assignee.email) {
       console.log(`Skipping task "${task.name}" — assignee has no email.`);
@@ -124,34 +193,23 @@ async function main() {
       to_name: assignee.name,
       task_name: task.name,
       device_name: device ? device.name : 'כללי (ללא מכשיר)',
-      freq_label: freqLabel(task.freq),
-      due_date: new Date(dueStr).toLocaleDateString('he-IL'),
-      timing_label: reminderTimingLabel(task.reminderDaysBefore),
+      freq_label: task.freqType === 'once' ? 'חד פעמי' : task.freqType === 'asneeded' ? 'לפי הצורך' : freqLabel(task.freq),
+      due_date: new Date(dueStr + 'T00:00:00').toLocaleDateString('he-IL'),
+      timing_label: reminderTimingLabel(task.reminderDaysBefore, task.reminderCustomDate),
       instructions: task.instructions || ''
     };
 
-    console.log(`Sending reminder for "${task.name}" to ${assignee.email} (due ${dueStr})...`);
+    console.log(`Sending reminder for "${task.name}" to ${assignee.email} (${dueStr})...`);
 
-    const res = await fetch('https://api.emailjs.com/api/v1.0/email/send', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        service_id: EMAILJS_SERVICE_ID,
-        template_id: EMAILJS_TEMPLATE_ID,
-        user_id: EMAILJS_PUBLIC_KEY,
-        accessToken: EMAILJS_PRIVATE_KEY,
-        template_params: templateParams
-      })
-    });
-
-    if (!res.ok) {
-      const text = await res.text();
-      console.error(`Failed to send for task "${task.name}": ${res.status} ${text}`);
+    try {
+      await sendEmailJs(templateParams);
+    } catch (e) {
+      console.error(`Failed to send for task "${task.name}": ${e.message}`);
       continue; // don't mark as sent if it failed
     }
 
     console.log(`Sent reminder for "${task.name}".`);
-    task.lastReminderSentFor = dueStr;
+    task.lastReminderSentFor = cycleKey;
     anyChanges = true;
   }
 
