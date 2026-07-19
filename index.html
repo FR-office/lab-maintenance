@@ -30,6 +30,7 @@ body{font-family:'Heebo',sans-serif;background:#f5f5f3;color:#1a1a1a;min-height:
 .task-card{background:#fff;border:1px solid #e8e8e5;border-radius:10px;padding:14px 16px;margin-bottom:8px;display:flex;align-items:flex-start;gap:12px}
 .task-card.done{opacity:0.5}
 .task-card.overdue{border-color:#e74c3c;background:#fdf5f5}
+.task-card.upcoming{border-color:#f0ad4e;background:#fffaf0}
 .task-left{flex:1;min-width:0}
 .task-name{font-size:15px;font-weight:500;margin-bottom:4px}
 .task-meta{font-size:12px;color:#888;display:flex;gap:6px;flex-wrap:wrap;align-items:center}
@@ -38,6 +39,7 @@ body{font-family:'Heebo',sans-serif;background:#f5f5f3;color:#1a1a1a;min-height:
 .badge-general{background:#fdf1de;color:#a5680f}
 .badge-assignee{background:#eaf2fd;color:#1a5fb4}
 .badge-admin{background:#f3e8fd;color:#7c3aed}
+.badge-upcoming{background:#fef3cd;color:#8a5a00}
 .checkbox-row{display:flex;align-items:center;gap:8px}
 .checkbox-row input{width:16px;height:16px;cursor:pointer;flex-shrink:0}
 .checkbox-row label{margin:0;font-size:13px;color:#444;cursor:pointer}
@@ -440,6 +442,26 @@ function isOverdue(task) {
   const graceMs = task.freq * 7 * 0.5 * 86400000; // more than half a cycle past the due date
   return Date.now() > due.getTime() + graceMs;
 }
+function reminderTargetDate(task) {
+  const due = nextDueDate(task);
+  if (!due) return null;
+  if (task.reminderDaysBefore === 'custom') {
+    return task.reminderCustomDate ? new Date(task.reminderCustomDate + 'T00:00:00') : null;
+  }
+  const days = task.reminderDaysBefore || 0;
+  const target = new Date(due);
+  target.setDate(target.getDate() - days);
+  return target;
+}
+function isReminderActive(task) {
+  // "Upcoming" = the email reminder window has opened, but the task isn't due yet
+  // (once it's due it belongs in the main pending list instead, not here).
+  if (!task.emailReminder) return false;
+  if (isDue(task)) return false;
+  const target = reminderTargetDate(task);
+  if (!target) return false;
+  return Date.now() >= target.getTime();
+}
 function freqLabel(f) {
   return f===1?'שבועי':f===2?'דו-שבועי':f===4?'חודשי':f===8?'חודשיים':f===13?'רבעוני':f===26?'חצי שנתי':f===52?'שנתי':f===104?'דו-שנתי':`כל ${f} שב'`;
 }
@@ -535,6 +557,7 @@ function renderThisWeek() {
   const doneThis = due.filter(t => isDoneThisWeek(t));
   const pending = due.filter(t => !isDoneThisWeek(t));
   const overdue = state.tasks.filter(t => isOverdue(t));
+  const upcoming = state.tasks.filter(t => isReminderActive(t));
 
   let html = `<div class="summary-grid">
     <div class="stat ${pending.length > 0 ? 'danger' : 'success'}">
@@ -552,22 +575,26 @@ function renderThisWeek() {
     html += `<p class="section-header">לביצוע השבוע</p>`;
     pending.forEach(t => html += taskCardHTML(t, false, isOverdue(t)));
   }
+  if (upcoming.length > 0) {
+    html += `<p class="section-header">מתקרבות (יצאה עליהן תזכורת)</p>`;
+    upcoming.forEach(t => html += taskCardHTML(t, false, false, true));
+  }
   if (doneThis.length > 0) {
     html += `<p class="section-header">בוצעו השבוע</p>`;
     doneThis.forEach(t => html += taskCardHTML(t, true, false));
   }
-  if (!pending.length && !doneThis.length) {
+  if (!pending.length && !doneThis.length && !upcoming.length) {
     html += `<div class="empty"><div class="empty-icon">✅</div>אין משימות לשבוע זה</div>`;
   }
   html += `<button class="add-btn" onclick="openQuickDone()">✓ עדכון ביצוע למשימה שלא ברשימה</button>`;
   document.getElementById('tab-this-week').innerHTML = html;
 }
 
-function taskCardHTML(t, done, overdue) {
+function taskCardHTML(t, done, overdue, upcoming) {
   const dev = state.devices.find(d => d.id === t.deviceId);
   const assignee = state.staff.find(s => s.id === t.assigneeId);
   const comp = state.completions[t.id];
-  return `<div class="task-card ${done ? 'done' : ''} ${overdue ? 'overdue' : ''}">
+  return `<div class="task-card ${done ? 'done' : ''} ${overdue ? 'overdue' : ''} ${upcoming ? 'upcoming' : ''}">
     <div class="task-left">
       <div class="task-name">${t.name}</div>
       <div class="task-meta">
@@ -577,10 +604,12 @@ function taskCardHTML(t, done, overdue) {
         <span style="color:#aaa">${scheduleLabel(t)}</span>
         ${assignee ? `<span class="badge badge-assignee">👤 ${assignee.name}</span>` : ''}
         ${overdue ? `<span class="badge badge-overdue">באיחור</span>` : ''}
+        ${upcoming ? `<span class="badge badge-upcoming">🔔 מתקרב</span>` : ''}
         ${done ? `<span class="badge badge-done">✓ בוצע</span>` : ''}
       </div>
       ${done && comp ? `<div class="done-info">👤 ${comp.worker}${comp.notes ? ' · ' + comp.notes : ''}</div>` : ''}
       ${done ? (() => { const nd = nextDueDate(t); return nd ? `<div class="done-info">📅 ביצוע הבא: ${nd.toLocaleDateString('he-IL')}</div>` : ''; })() : ''}
+      ${upcoming ? (() => { const nd = nextDueDate(t); return nd ? `<div class="done-info">📅 תאריך יעד: ${nd.toLocaleDateString('he-IL')}</div>` : ''; })() : ''}
       ${t.instructions ? `<div class="task-instructions">${t.instructions}</div>` : ''}
     </div>
     <div class="task-actions">
