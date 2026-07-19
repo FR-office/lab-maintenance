@@ -754,6 +754,8 @@ window.startDone = function(taskId) {
   document.getElementById('done-task-info').innerHTML = `<strong>${t?.name}</strong>${dev ? ' — ' + dev.name : ''}`;
   document.getElementById('done-worker').value = '';
   document.getElementById('done-notes').value = '';
+  const dbtn = document.querySelector('#done-modal .btn-primary');
+  dbtn.textContent = '✓ אישור ביצוע'; dbtn.disabled = false;
   document.getElementById('done-modal').style.display = 'flex';
   setTimeout(() => document.getElementById('done-worker').focus(), 100);
 };
@@ -776,6 +778,7 @@ window.confirmDone = async function() {
     historyLog.push(entry);
     await saveState();
     await saveHistory();
+    btn.textContent = '✓ אישור ביצוע'; btn.disabled = false;
     closeAllModals();
     const nextMsg = nd ? ` — ביצוע הבא: ${nd.toLocaleDateString('he-IL')}` : '';
     showToast('✓ תחזוקה נרשמה' + nextMsg);
