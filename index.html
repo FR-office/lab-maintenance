@@ -90,6 +90,7 @@ body{font-family:'Heebo',sans-serif;background:#f5f5f3;color:#1a1a1a;min-height:
 .spinner{width:28px;height:28px;border:3px solid #e8e8e5;border-top-color:#1a1a1a;border-radius:50%;animation:spin 0.7s linear infinite;margin:0 auto 12px}
 @keyframes spin{to{transform:rotate(360deg)}}
 </style>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 </head>
 <body>
 
@@ -97,7 +98,7 @@ body{font-family:'Heebo',sans-serif;background:#f5f5f3;color:#1a1a1a;min-height:
   <div class="topbar-title">🧪 תחזוקת מעבדה</div>
   <div class="topbar-right">
     <span class="week-badge" id="week-label"></span>
-    <button class="btn-export" onclick="showExportModal()">📥 גיבוי CSV</button>
+    <button class="btn-export" onclick="showExportModal()">📥 גיבוי Excel</button>
   </div>
 </div>
 
@@ -288,7 +289,7 @@ body{font-family:'Heebo',sans-serif;background:#f5f5f3;color:#1a1a1a;min-height:
 <div id="export-modal" class="modal-backdrop" style="display:none">
   <div class="modal">
     <h2>גיבוי נתונים</h2>
-    <p style="font-size:14px;color:#666;margin-bottom:16px">בחרי מה לייצא לקובץ CSV:</p>
+    <p style="font-size:14px;color:#666;margin-bottom:16px">בחרי מה לייצא לקובץ Excel (כל בחירה תהיה בלשונית נפרדת בקובץ):</p>
     <div class="export-options">
       <label class="export-option"><input type="checkbox" id="exp-tasks" checked> רשימת כל המשימות</label>
       <label class="export-option"><input type="checkbox" id="exp-history" checked> היסטוריית ביצועים</label>
@@ -296,7 +297,7 @@ body{font-family:'Heebo',sans-serif;background:#f5f5f3;color:#1a1a1a;min-height:
     </div>
     <div class="modal-btns">
       <button class="btn-secondary" onclick="closeAllModals()">ביטול</button>
-      <button class="btn-primary" onclick="doExport()">📥 ייצא CSV</button>
+      <button class="btn-primary" onclick="doExport()">📥 ייצא Excel</button>
     </div>
   </div>
 </div>
@@ -1067,17 +1068,24 @@ window.doExport = function() {
   const expTasks = document.getElementById('exp-tasks').checked;
   const expHistory = document.getElementById('exp-history').checked;
   const expStatus = document.getElementById('exp-status').checked;
-  const BOM = '\uFEFF';
-  let parts = [];
+  if (!expTasks && !expHistory && !expStatus) { alert('בחרי לפחות סוג אחד'); return; }
+  if (typeof XLSX === 'undefined') {
+    alert('שגיאה בטעינת ספריית הייצוא — בדקי חיבור לאינטרנט ונסי שוב');
+    return;
+  }
+
+  const wb = XLSX.utils.book_new();
 
   if (expTasks) {
-    let rows = [['שם משימה','מכשיר','מיקום','סוג פעולה','תדירות (שבועות)','הוראות']];
+    let rows = [['שם משימה','מכשיר','מיקום','סוג פעולה','קטגוריה','תדירות','הוראות']];
     state.tasks.forEach(t => {
       const dev = state.devices.find(d => d.id === t.deviceId);
-      rows.push([t.name, dev?.name||'', dev?.location||'', t.type, t.freq, t.instructions||'']);
+      rows.push([t.name, dev?.name||'כללי', dev?.location||'', t.type, t.category==='admin'?'מנהלתי':'מעבדתי', scheduleLabel(t), t.instructions||'']);
     });
-    parts.push('## רשימת משימות\n' + rows.map(r => r.map(c => `"${String(c).replace(/"/g,'""')}"`).join(',')).join('\n'));
+    const ws = XLSX.utils.aoa_to_sheet(rows);
+    XLSX.utils.book_append_sheet(wb, ws, 'משימות');
   }
+
   if (expHistory) {
     const arr = Array.isArray(historyLog) ? historyLog : Object.values(historyLog || {});
     let rows = [['תאריך','שם משימה','מכשיר','עובד','הערות']];
@@ -1086,28 +1094,25 @@ window.doExport = function() {
       const dev = state.devices.find(d => d.id === task?.deviceId);
       rows.push([new Date(h.date).toLocaleDateString('he-IL'), task?.name||h.taskName||'', dev?.name||'', h.worker, h.notes||'']);
     });
-    parts.push('\n## היסטוריית ביצועים\n' + rows.map(r => r.map(c => `"${String(c).replace(/"/g,'""')}"`).join(',')).join('\n'));
+    const ws = XLSX.utils.aoa_to_sheet(rows);
+    XLSX.utils.book_append_sheet(wb, ws, 'היסטוריה');
   }
+
   if (expStatus) {
-    const wk = getWeekKey();
-    let rows = [['שם משימה','מכשיר','סוג','תדירות','בוצע השבוע','תאריך ביצוע אחרון','מבצע אחרון']];
+    let rows = [['שם משימה','מכשיר','סוג','תדירות','סטטוס','תאריך ביצוע אחרון','מבצע אחרון']];
     state.tasks.forEach(t => {
       const dev = state.devices.find(d => d.id === t.deviceId);
       const comp = state.completions[t.id];
-      rows.push([t.name, dev?.name||'', t.type, freqLabel(t.freq), comp?.weekKey===wk?'כן':'לא', comp?new Date(comp.date).toLocaleDateString('he-IL'):'', comp?.worker||'']);
+      const status = isOverdue(t) ? 'באיחור' : isDoneThisWeek(t) ? 'בוצע' : isDue(t) ? 'ממתין' : 'לא ממתין';
+      rows.push([t.name, dev?.name||'כללי', t.type, scheduleLabel(t), status, comp?new Date(comp.date).toLocaleDateString('he-IL'):'', comp?.worker||'']);
     });
-    parts.push('\n## מצב נוכחי\n' + rows.map(r => r.map(c => `"${String(c).replace(/"/g,'""')}"`).join(',')).join('\n'));
+    const ws = XLSX.utils.aoa_to_sheet(rows);
+    XLSX.utils.book_append_sheet(wb, ws, 'מצב נוכחי');
   }
-  if (!parts.length) { alert('בחרי לפחות סוג אחד'); return; }
 
-  const blob = new Blob([BOM + parts.join('\n')], { type: 'text/csv;charset=utf-8;' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url; a.download = `תחזוקת_מעבדה_${new Date().toISOString().slice(0,10)}.csv`;
-  document.body.appendChild(a); a.click();
-  document.body.removeChild(a); URL.revokeObjectURL(url);
+  XLSX.writeFile(wb, `תחזוקת_מעבדה_${new Date().toISOString().slice(0,10)}.xlsx`);
   closeAllModals();
-  showToast('קובץ CSV הורד בהצלחה');
+  showToast('קובץ Excel הורד בהצלחה');
 };
 
 // ── Init ──
