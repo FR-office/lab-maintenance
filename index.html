@@ -374,18 +374,20 @@ function nextDueDate(task) {
   }
   const lastDate = new Date(last.date);
   if (hasFixedWeekday(task)) {
-    // Anchor to the same weekday every cycle, regardless of which day it was actually completed on.
-    const day = lastDate.getDay();
-    const diffToMonday = day === 0 ? -6 : 1 - day;
-    const weekStart = new Date(lastDate);
-    weekStart.setDate(weekStart.getDate() + diffToMonday);
-    weekStart.setHours(0, 0, 0, 0);
-    const targetWeekStart = new Date(weekStart);
-    targetWeekStart.setDate(targetWeekStart.getDate() + task.freq * 7);
+    // Land on the next occurrence of the fixed weekday after completion. Only skip
+    // a full cycle ahead if the task was completed exactly on its fixed weekday —
+    // otherwise (e.g. done on a Monday for a "always Sunday" task) the very next
+    // occurrence of that weekday is the correct due date, not one cycle further.
     const fw = parseInt(task.fixedWeekday);
-    const offset = fw === 0 ? 6 : fw - 1; // days after Monday
-    const due = new Date(targetWeekStart);
-    due.setDate(due.getDate() + offset);
+    const lastDay = lastDate.getDay();
+    const diff = (fw - lastDay + 7) % 7;
+    const due = new Date(lastDate);
+    due.setHours(0, 0, 0, 0);
+    if (diff === 0) {
+      due.setDate(due.getDate() + task.freq * 7);
+    } else {
+      due.setDate(due.getDate() + diff);
+    }
     return due;
   }
   const d = new Date(lastDate);
