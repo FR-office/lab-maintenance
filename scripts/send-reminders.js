@@ -61,17 +61,16 @@ function nextDueDate(task, completions) {
   }
   const lastDate = new Date(last.date);
   if (hasFixedWeekday(task)) {
-    const day = lastDate.getDay();
-    const diffToMonday = day === 0 ? -6 : 1 - day;
-    const weekStart = new Date(lastDate);
-    weekStart.setDate(weekStart.getDate() + diffToMonday);
-    weekStart.setHours(0, 0, 0, 0);
-    const targetWeekStart = new Date(weekStart);
-    targetWeekStart.setDate(targetWeekStart.getDate() + task.freq * 7);
     const fw = parseInt(task.fixedWeekday);
-    const offset = fw === 0 ? 6 : fw - 1;
-    const due = new Date(targetWeekStart);
-    due.setDate(due.getDate() + offset);
+    const lastDay = lastDate.getDay();
+    const diff = (fw - lastDay + 7) % 7;
+    const due = new Date(lastDate);
+    due.setHours(0, 0, 0, 0);
+    if (diff === 0) {
+      due.setDate(due.getDate() + task.freq * 7);
+    } else {
+      due.setDate(due.getDate() + diff);
+    }
     return due;
   }
   const d = new Date(lastDate);
