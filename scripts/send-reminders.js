@@ -151,7 +151,7 @@ async function main() {
       if (!task.reminderCustomDate) continue;
       const targetStr = task.reminderCustomDate; // already YYYY-MM-DD
       const cycleKey = 'custom:' + targetStr;
-      if (targetStr !== todayStr) continue;
+      if (targetStr > todayStr) continue; // scheduled day hasn't arrived yet
       if (task.lastReminderSentFor === cycleKey) continue;
       toSend.push({ task, dueStr: targetStr, cycleKey });
       continue;
@@ -166,7 +166,11 @@ async function main() {
     target.setDate(target.getDate() - daysBefore);
     const targetStr = toDateStr(target);
 
-    if (targetStr !== todayStr) continue; // not the scheduled day yet
+    // Catch-up logic: fire if the scheduled reminder day has arrived (today or
+    // already passed) and hasn't been sent yet for this due-date cycle. This
+    // means a failed run (e.g. an EmailJS outage) doesn't lose the reminder
+    // forever — the next successful run picks it up instead of skipping it.
+    if (targetStr > todayStr) continue; // scheduled day hasn't arrived yet
     if (task.lastReminderSentFor === dueStr) continue; // already sent for this cycle
 
     toSend.push({ task, dueStr, cycleKey: dueStr });
