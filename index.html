@@ -441,18 +441,17 @@ function isOverdue(task) {
     const daysSince = (Date.now() - new Date(last.date)) / 86400000;
     return daysSince > task.maxIntervalDays;
   }
+  const graceMs = 1 * 86400000; // flat 1-day grace period past the due date, for every task type
   if (task.freqType === 'once') {
     if (last) return false; // done — no longer overdue
     const due = nextDueDate(task);
     if (!due) return false;
-    const graceMs = 3 * 86400000; // flat 3-day grace period for one-time tasks
     return Date.now() > due.getTime() + graceMs;
   }
   // 'scheduled'
   if (!last && !task.dueDateOverride) return false; // no baseline at all — nothing to be "overdue" against
   const due = nextDueDate(task);
   if (!due) return false;
-  const graceMs = task.freq * 7 * 0.5 * 86400000; // more than half a cycle past the due date
   return Date.now() > due.getTime() + graceMs;
 }
 function reminderTargetDate(task) {
