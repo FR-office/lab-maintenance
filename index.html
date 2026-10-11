@@ -134,7 +134,21 @@ a:focus-visible,button:focus-visible,select:focus-visible,input:focus-visible,te
     </div>
     <div id="all-tasks-list"></div>
   </div>
-  <div id="tab-history" role="tabpanel" aria-labelledby="tab-btn-history" style="display:none"><div id="history-list"></div></div>
+  <div id="tab-history" role="tabpanel" aria-labelledby="tab-btn-history" style="display:none">
+    <div class="filter-row">
+      <label for="filter-hist-device" class="visually-hidden">סינון היסטוריה לפי מכשיר</label>
+      <select id="filter-hist-device" onchange="renderHistory()"><option value="">כל המכשירים</option></select>
+      <label for="filter-hist-type" class="visually-hidden">סינון היסטוריה לפי סוג פעולה</label>
+      <select id="filter-hist-type" onchange="renderHistory()"><option value="">כל הסוגים</option></select>
+      <label for="filter-hist-category" class="visually-hidden">סינון היסטוריה לפי קטגוריה</label>
+      <select id="filter-hist-category" onchange="renderHistory()">
+        <option value="">כל הקטגוריות</option>
+        <option value="lab">מעבדתי</option>
+        <option value="admin">מנהלתי</option>
+      </select>
+    </div>
+    <div id="history-list"></div>
+  </div>
   <div id="tab-manage" role="tabpanel" aria-labelledby="tab-btn-manage" style="display:none">
     <div class="manage-section">
       <p class="section-header">מכשירים</p>
@@ -683,12 +697,42 @@ function renderAllTasks() {
 let currentHistorySorted = [];
 function renderHistory() {
   const arr = Array.isArray(historyLog) ? historyLog : Object.values(historyLog || {});
-  const sorted = [...arr].sort((a, b) => new Date(b.date) - new Date(a.date)).slice(0, 80);
+
+  // Filters (same idea as the "all tasks" tab). A history entry's device / action
+  // type / category come from the task it belongs to.
+  const devSel = document.getElementById('filter-hist-device');
+  const typeSel = document.getElementById('filter-hist-type');
+  const catSel = document.getElementById('filter-hist-category');
+  const curDev = devSel.value, curType = typeSel.value, curCat = catSel.value;
+  const types = [...new Set(state.tasks.map(t => t.type))];
+  devSel.innerHTML = '<option value="">כל המכשירים</option><option value="__none__"' + (curDev==='__none__'?' selected':'') + '>ללא מכשיר (כללי)</option>' + state.devices.map(d => `<option value="${d.id}"${curDev===d.id?' selected':''}>${d.name}</option>`).join('');
+  typeSel.innerHTML = '<option value="">כל הסוגים</option>' + types.map(ty => `<option value="${ty}"${curType===ty?' selected':''}>${ty}</option>`).join('');
+
+  const hasFilter = !!(curDev || curType || curCat);
+  let filtered = [...arr];
+  if (hasFilter) {
+    filtered = filtered.filter(h => {
+      const task = state.tasks.find(t => t.id === h.taskId);
+      if (!task) return false; // task was deleted — can't tell its device/type/category
+      if (curDev === '__none__') { if (task.deviceId) return false; }
+      else if (curDev && task.deviceId !== curDev) return false;
+      if (curType && task.type !== curType) return false;
+      if (curCat && (task.category || 'lab') !== curCat) return false;
+      return true;
+    });
+  }
+
+  const sorted = filtered.sort((a, b) => new Date(b.date) - new Date(a.date)).slice(0, 80);
   currentHistorySorted = sorted;
   let html = '';
-  if (!sorted.length) {
+  if (!arr.length) {
     html = `<div class="empty"><div class="empty-icon">📋</div>אין היסטוריה עדיין</div>`;
+  } else if (!sorted.length) {
+    html = `<div class="empty"><div class="empty-icon">🔍</div>אין רשומות התואמות לסינון</div>`;
   } else {
+    if (filtered.length > 80) {
+      html += `<p style="font-size:12px;color:#707070;margin-bottom:8px">מוצגות 80 הרשומות האחרונות מתוך ${filtered.length}</p>`;
+    }
     sorted.forEach((h, idx) => {
       const task = state.tasks.find(t => t.id === h.taskId);
       const dev = state.devices.find(d => d.id === task?.deviceId);
