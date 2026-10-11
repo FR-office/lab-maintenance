@@ -8,11 +8,18 @@ on:
     # time / 08:00 Israel summer time. Change the two numbers below to shift it
     # (format: minute hour * * *).
     - cron: '0 6 * * *'
-  workflow_dispatch: {}   # lets you trigger it manually from the Actions tab to test
+  workflow_dispatch:       # lets you trigger it manually from the Actions tab
+    inputs:
+      test_email:
+        description: 'Send a one-off TEST email to this address instead of checking real tasks (leave empty for a normal run)'
+        required: false
+        type: string
 
 jobs:
   send-reminders:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write   # needed so the keepalive step below can commit
     steps:
       - name: Checkout repo
         uses: actions/checkout@v5
@@ -29,4 +36,22 @@ jobs:
           EMAILJS_TEMPLATE_ID: ${{ secrets.EMAILJS_TEMPLATE_ID }}
           EMAILJS_PUBLIC_KEY: ${{ secrets.EMAILJS_PUBLIC_KEY }}
           EMAILJS_PRIVATE_KEY: ${{ secrets.EMAILJS_PRIVATE_KEY }}
+          TEST_EMAIL: ${{ inputs.test_email }}
         run: node scripts/send-reminders.js
+
+      - name: Keep repository active
+        # GitHub auto-disables scheduled (cron) workflows after 60 days with no
+        # commits to the repo — running this workflow daily does NOT count as
+        # activity by itself. This step makes a tiny, harmless daily commit
+        # (just a timestamp file) so the repo always looks "active" and the
+        # schedule never gets silently disabled, even if nobody opens GitHub
+        # for months.
+        run: |
+          mkdir -p .github
+          date -u "+%Y-%m-%d %H:%M UTC" > .github/last-run.txt
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .github/last-run.txt
+          git diff --cached --quiet || git commit -m "chore: keepalive $(date -u +%Y-%m-%d)"
+          git push
+
