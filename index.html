@@ -58,7 +58,8 @@ body{font-family:'Heebo',sans-serif;background:#f5f5f3;color:#1a1a1a;min-height:
 .empty{text-align:center;padding:40px 16px;color:#707070;font-size:14px}
 .empty-icon{font-size:36px;margin-bottom:10px}
 .filter-row{display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap}
-.filter-row select{font-size:13px;padding:7px 10px;border:1px solid #d0d0cc;border-radius:8px;background:#fff;color:#1a1a1a;font-family:'Heebo',sans-serif}
+.filter-row select,.filter-row input[type=search]{font-size:13px;padding:7px 10px;border:1px solid #d0d0cc;border-radius:8px;background:#fff;color:#1a1a1a;font-family:'Heebo',sans-serif}
+.filter-row input[type=search]{min-width:160px;flex:1 1 160px}
 .history-row{display:flex;justify-content:space-between;align-items:flex-start;padding:12px 0;border-bottom:1px solid #f0f0ee}
 .history-row:last-child{border-bottom:none}
 .history-name{font-size:14px;font-weight:500}
@@ -152,6 +153,10 @@ a:focus-visible,button:focus-visible,select:focus-visible,input:focus-visible,te
   <div id="tab-manage" role="tabpanel" aria-labelledby="tab-btn-manage" style="display:none">
     <div class="manage-section">
       <p class="section-header">מכשירים</p>
+      <div class="filter-row">
+        <label for="manage-dev-search" class="visually-hidden">חיפוש מכשיר לפי שם או מיקום</label>
+        <input type="search" id="manage-dev-search" placeholder="🔍 חיפוש מכשיר (שם / מיקום)" oninput="renderManage()">
+      </div>
       <div id="devices-list"></div>
       <button class="add-btn" onclick="openDeviceModal()">+ הוסף מכשיר</button>
     </div>
@@ -162,6 +167,24 @@ a:focus-visible,button:focus-visible,select:focus-visible,input:focus-visible,te
     </div>
     <div class="manage-section">
       <p class="section-header">משימות תחזוקה</p>
+      <div class="filter-row">
+        <label for="manage-task-search" class="visually-hidden">חיפוש משימה לפי שם</label>
+        <input type="search" id="manage-task-search" placeholder="🔍 חיפוש משימה לפי שם" oninput="renderManage()">
+        <label for="manage-task-device" class="visually-hidden">סינון משימות לפי מכשיר</label>
+        <select id="manage-task-device" onchange="renderManage()"><option value="">כל המכשירים</option></select>
+        <label for="manage-task-type" class="visually-hidden">סינון משימות לפי סוג פעולה</label>
+        <select id="manage-task-type" onchange="renderManage()"><option value="">כל הסוגים</option></select>
+        <label for="manage-task-category" class="visually-hidden">סינון משימות לפי קטגוריה</label>
+        <select id="manage-task-category" onchange="renderManage()">
+          <option value="">כל הקטגוריות</option>
+          <option value="lab">מעבדתי</option>
+          <option value="admin">מנהלתי</option>
+        </select>
+        <label for="manage-task-assignee" class="visually-hidden">סינון משימות לפי אחראי</label>
+        <select id="manage-task-assignee" onchange="renderManage()"><option value="">כל האחראים</option></select>
+        <button type="button" class="btn-action muted" id="manage-task-clear" style="display:none" onclick="clearManageFilters()">✕ נקה סינון</button>
+      </div>
+      <div id="manage-task-count" style="font-size:12px;color:#707070;margin-bottom:8px" aria-live="polite"></div>
       <div id="tasks-manage-list"></div>
       <button class="add-btn" onclick="openTaskModal()">+ הוסף משימה</button>
     </div>
@@ -768,8 +791,48 @@ window.deleteHistoryEntry = async function(idx) {
   }
 };
 
+function clearManageFilters() {
+  ['manage-task-search','manage-task-device','manage-task-type','manage-task-category','manage-task-assignee'].forEach(id => {
+    document.getElementById(id).value = '';
+  });
+  renderManage();
+}
+
 function renderManage() {
-  const dhtml = state.devices.map(d => `
+  // ── Filters (devices: free-text search; tasks: search + device / type / category / assignee) ──
+  const devQuery = document.getElementById('manage-dev-search').value.trim().toLowerCase();
+  const visibleDevices = devQuery
+    ? state.devices.filter(d => (d.name || '').toLowerCase().includes(devQuery) || (d.location || '').toLowerCase().includes(devQuery))
+    : state.devices;
+
+  const tDevSel = document.getElementById('manage-task-device');
+  const tTypeSel = document.getElementById('manage-task-type');
+  const tAssSel = document.getElementById('manage-task-assignee');
+  const tCatSel = document.getElementById('manage-task-category');
+  const tQuery = document.getElementById('manage-task-search').value.trim().toLowerCase();
+  const fDev = tDevSel.value, fType = tTypeSel.value, fCat = tCatSel.value, fAss = tAssSel.value;
+  const taskTypes = [...new Set(state.tasks.map(t => t.type))];
+  tDevSel.innerHTML = '<option value="">כל המכשירים</option><option value="__none__"' + (fDev==='__none__'?' selected':'') + '>ללא מכשיר (כללי)</option>' + state.devices.map(d => `<option value="${d.id}"${fDev===d.id?' selected':''}>${d.name}</option>`).join('');
+  tTypeSel.innerHTML = '<option value="">כל הסוגים</option>' + taskTypes.map(ty => `<option value="${ty}"${fType===ty?' selected':''}>${ty}</option>`).join('');
+  tAssSel.innerHTML = '<option value="">כל האחראים</option><option value="__none__"' + (fAss==='__none__'?' selected':'') + '>ללא אחראי</option>' + state.staff.map(s => `<option value="${s.id}"${fAss===s.id?' selected':''}>${s.name}</option>`).join('');
+
+  const taskFilterActive = !!(tQuery || fDev || fType || fCat || fAss);
+  const visibleTasks = state.tasks.filter(t => {
+    if (tQuery && !(t.name || '').toLowerCase().includes(tQuery)) return false;
+    if (fDev === '__none__') { if (t.deviceId) return false; }
+    else if (fDev && t.deviceId !== fDev) return false;
+    if (fType && t.type !== fType) return false;
+    if (fCat && (t.category || 'lab') !== fCat) return false;
+    if (fAss === '__none__') { if (t.assigneeId) return false; }
+    else if (fAss && t.assigneeId !== fAss) return false;
+    return true;
+  });
+  document.getElementById('manage-task-clear').style.display = taskFilterActive ? '' : 'none';
+  document.getElementById('manage-task-count').textContent = taskFilterActive
+    ? `מוצגות ${visibleTasks.length} מתוך ${state.tasks.length} משימות`
+    : '';
+
+  const dhtml = visibleDevices.map(d => `
     <div class="task-card" style="align-items:center">
       <div class="task-left">
         <div class="task-name">${d.name}</div>
@@ -779,7 +842,7 @@ function renderManage() {
         <button class="btn-action" onclick="openDeviceModal('${d.id}')">✏️ ערוך</button>
         <button class="btn-action danger" onclick="deleteDevice('${d.id}')" aria-label="מחק מכשיר ${d.name}">🗑</button>
       </div>
-    </div>`).join('') || `<div class="empty" style="padding:16px 0">אין מכשירים — הוסף למטה</div>`;
+    </div>`).join('') || `<div class="empty" style="padding:16px 0">${state.devices.length ? 'אין מכשירים התואמים לחיפוש' : 'אין מכשירים — הוסף למטה'}</div>`;
   document.getElementById('devices-list').innerHTML = dhtml;
 
   const shtml = state.staff.map(s => `
@@ -795,7 +858,7 @@ function renderManage() {
     </div>`).join('') || `<div class="empty" style="padding:16px 0">אין אנשי צוות — הוסף למטה</div>`;
   document.getElementById('staff-list').innerHTML = shtml;
 
-  const thtml = state.tasks.map(t => {
+  const thtml = visibleTasks.map(t => {
     const dev = state.devices.find(d => d.id === t.deviceId);
     const assignee = state.staff.find(s => s.id === t.assigneeId);
     return `<div class="task-card" style="align-items:center">
@@ -815,7 +878,7 @@ function renderManage() {
         <button class="btn-action danger" onclick="deleteTask('${t.id}')" aria-label="מחק משימה ${t.name}">🗑</button>
       </div>
     </div>`;
-  }).join('') || `<div class="empty" style="padding:16px 0">אין משימות — הוסף למטה</div>`;
+  }).join('') || `<div class="empty" style="padding:16px 0">${state.tasks.length ? 'אין משימות התואמות לסינון' : 'אין משימות — הוסף למטה'}</div>`;
   document.getElementById('tasks-manage-list').innerHTML = thtml;
 }
 
