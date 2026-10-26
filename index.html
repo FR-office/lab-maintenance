@@ -94,6 +94,30 @@ a:focus-visible,button:focus-visible,select:focus-visible,input:focus-visible,te
 .loading{text-align:center;padding:40px;color:#707070;font-size:14px}
 .spinner{width:28px;height:28px;border:3px solid #e8e8e5;border-top-color:#1a1a1a;border-radius:50%;animation:spin 0.7s linear infinite;margin:0 auto 12px}
 @keyframes spin{to{transform:rotate(360deg)}}
+
+/* ── Orders ── */
+.subnav{display:flex;gap:6px;margin-bottom:14px;flex-wrap:wrap;align-items:center}
+.subnav button{font-size:13px;padding:7px 14px;cursor:pointer;border:1px solid #d0d0cc;border-radius:20px;background:#fff;color:#444;font-family:'Heebo',sans-serif}
+.subnav button.active{background:#1a1a1a;color:#fff;border-color:#1a1a1a}
+.subnav .push{margin-inline-start:auto}
+.stat.clickable{cursor:pointer;transition:border-color .15s}
+.stat.clickable:hover{border-color:#949494}
+.stat.sel{border-color:#1a1a1a;box-shadow:0 0 0 1px #1a1a1a}
+.badge-needed{background:#fdf1de;color:#a55209}
+.badge-ordered{background:#eaf2fd;color:#1a5fb4}
+.sel-bar{position:sticky;bottom:12px;z-index:5;display:flex;align-items:center;gap:10px;background:#1a1a1a;color:#fff;border-radius:12px;padding:10px 14px;margin-top:12px;box-shadow:0 8px 24px rgba(0,0,0,.2)}
+.sel-bar span{flex:1;font-size:14px}
+.sel-bar .btn-primary{background:#fff;color:#1a1a1a}
+.sel-bar .btn-action{color:#ddd}
+.order-card{background:#fff;border:1px solid #e8e8e5;border-radius:10px;padding:14px 16px;margin-bottom:10px}
+.order-head{display:flex;justify-content:space-between;gap:8px;align-items:flex-start;margin-bottom:8px}
+.order-title{font-size:15px;font-weight:600}
+.order-line{display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:13px;padding:6px 0;border-top:1px solid #f0f0ee}
+.order-actions{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px}
+.group-box{border:1px solid #e8e8e5;border-radius:10px;padding:12px;margin-bottom:10px;background:#fafaf8}
+.group-box ul{margin:8px 18px 0 0;font-size:13px;color:#444}
+.link-sm{font-size:12px;color:#1a5fb4;text-decoration:none}
+.link-sm:hover{text-decoration:underline}
 </style>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 </head>
@@ -115,6 +139,7 @@ a:focus-visible,button:focus-visible,select:focus-visible,input:focus-visible,te
     <button class="tab" id="tab-btn-all-tasks" role="tab" aria-selected="false" aria-controls="tab-all-tasks" onclick="showTab('all-tasks')">כל המשימות</button>
     <button class="tab" id="tab-btn-history" role="tab" aria-selected="false" aria-controls="tab-history" onclick="showTab('history')">היסטוריה</button>
     <button class="tab" id="tab-btn-manage" role="tab" aria-selected="false" aria-controls="tab-manage" onclick="showTab('manage')">ניהול</button>
+    <button class="tab" id="tab-btn-orders" role="tab" aria-selected="false" aria-controls="tab-orders" onclick="showTab('orders')">הזמנות</button>
   </div>
 
   <div id="tab-this-week" role="tabpanel" aria-labelledby="tab-btn-this-week">
@@ -149,6 +174,34 @@ a:focus-visible,button:focus-visible,select:focus-visible,input:focus-visible,te
       </select>
     </div>
     <div id="history-list"></div>
+  </div>
+  <div id="tab-orders" role="tabpanel" aria-labelledby="tab-btn-orders" style="display:none">
+    <div class="subnav" id="orders-subnav" role="group" aria-label="תצוגות הזמנות">
+      <button data-view="items" onclick="setOrdersView('items')">רשימת פריטים</button>
+      <button data-view="orders" onclick="setOrdersView('orders')">הזמנות</button>
+      <button data-view="suppliers" onclick="setOrdersView('suppliers')">ספקים</button>
+      <button class="push" onclick="ordExport()">📥 Excel</button>
+    </div>
+    <div class="filter-row" id="orders-filters">
+      <label for="ord-q" class="visually-hidden">חיפוש</label>
+      <input type="search" id="ord-q" placeholder="חיפוש פריט, מק״ט, ספק או מספר הזמנה" oninput="renderOrders()">
+      <label for="ord-f-cat" class="visually-hidden">סינון לפי סוג</label>
+      <select id="ord-f-cat" onchange="renderOrders()">
+        <option value="">כל הסוגים</option>
+        <option value="equipment">ציוד</option>
+        <option value="chemical">כימיקלים</option>
+        <option value="consumable">מתכלים</option>
+      </select>
+      <label for="ord-f-sup" class="visually-hidden">סינון לפי ספק</label>
+      <select id="ord-f-sup" onchange="renderOrders()"><option value="">כל הספקים</option></select>
+      <label for="ord-f-rcpt" class="visually-hidden">סינון לפי קבלה</label>
+      <select id="ord-f-rcpt" onchange="renderOrders()">
+        <option value="">כל הקבלות</option>
+        <option value="no">קבלה לא הועברה</option>
+        <option value="yes">קבלה הועברה</option>
+      </select>
+    </div>
+    <div id="orders-body"></div>
   </div>
   <div id="tab-manage" role="tabpanel" aria-labelledby="tab-btn-manage" style="display:none">
     <div class="manage-section">
@@ -344,6 +397,76 @@ a:focus-visible,button:focus-visible,select:focus-visible,input:focus-visible,te
     <div class="modal-btns">
       <button class="btn-secondary" onclick="closeAllModals()">ביטול</button>
       <button class="btn-primary" onclick="doExport()">📥 ייצא Excel</button>
+    </div>
+  </div>
+</div>
+
+<!-- Orders: item modal -->
+<div id="ord-item-modal" class="modal-backdrop" style="display:none" role="dialog" aria-modal="true" aria-labelledby="ord-item-title">
+  <div class="modal">
+    <h2 id="ord-item-title">פריט להזמנה</h2>
+    <div class="form-group"><label for="oi-name">שם הפריט</label><input type="text" id="oi-name" placeholder="לדוג׳: קצוות פיפטה 200µl"></div>
+    <div class="form-group"><label for="oi-cat">סוג</label>
+      <select id="oi-cat"><option value="consumable">מתכלה</option><option value="chemical">כימיקל</option><option value="equipment">ציוד</option></select></div>
+    <div style="display:flex;gap:10px">
+      <div class="form-group" style="flex:1"><label for="oi-qty">כמות</label><input type="number" id="oi-qty" min="0" step="any" value="1"></div>
+      <div class="form-group" style="flex:1"><label for="oi-unit">יחידה</label><input type="text" id="oi-unit" placeholder="יח׳ / חבילה / ליטר"></div>
+    </div>
+    <div class="form-group"><label for="oi-sup">ספק</label><select id="oi-sup"></select>
+      <div id="oi-sup-hint" style="font-size:12px;color:#707070;margin-top:4px"></div></div>
+    <div class="form-group"><label for="oi-catalog">מק״ט (אופציונלי)</label><input type="text" id="oi-catalog"></div>
+    <div class="form-group"><label for="oi-link">קישור (אופציונלי)</label><input type="url" id="oi-link" placeholder="https://..." dir="ltr"></div>
+    <div class="form-group"><label for="oi-notes">הערות (אופציונלי)</label><textarea id="oi-notes" rows="2"></textarea></div>
+    <div class="modal-btns">
+      <button class="btn-secondary" onclick="closeAllModals()">ביטול</button>
+      <button class="btn-secondary" id="oi-save-more" onclick="saveOrdItem(true)">שמור והוסף עוד</button>
+      <button class="btn-primary" onclick="saveOrdItem(false)">שמור</button>
+    </div>
+  </div>
+</div>
+
+<!-- Orders: supplier modal -->
+<div id="ord-sup-modal" class="modal-backdrop" style="display:none" role="dialog" aria-modal="true" aria-labelledby="ord-sup-title">
+  <div class="modal">
+    <h2 id="ord-sup-title">ספק</h2>
+    <div class="form-group"><label for="os-name">שם הספק</label><input type="text" id="os-name"></div>
+    <div class="form-group"><label for="os-type">סוג</label>
+      <select id="os-type"><option value="regular">ספק קבוע</option><option value="aliexpress">אליאקספרס</option><option value="other">אחר</option></select></div>
+    <div class="form-group"><label for="os-site">אתר (אופציונלי)</label><input type="url" id="os-site" placeholder="https://..." dir="ltr"></div>
+    <div class="form-group"><label for="os-notes">איש קשר / הערות (אופציונלי)</label><textarea id="os-notes" rows="2"></textarea></div>
+    <div class="modal-btns">
+      <button class="btn-secondary" onclick="closeAllModals()">ביטול</button>
+      <button class="btn-primary" onclick="saveOrdSupplier()">שמור</button>
+    </div>
+  </div>
+</div>
+
+<!-- Orders: create orders from selected items -->
+<div id="ord-create-modal" class="modal-backdrop" style="display:none" role="dialog" aria-modal="true" aria-labelledby="ord-create-title">
+  <div class="modal" style="max-width:520px">
+    <h2 id="ord-create-title">יצירת הזמנות</h2>
+    <p style="font-size:13px;color:#666;margin-bottom:12px">הפריטים שנבחרו חולקו להזמנות לפי הספק. אפשר לשנות ספק לכל קבוצה (קבוצות עם אותו ספק יתאחדו להזמנה אחת).</p>
+    <div class="form-group"><label for="oc-date">תאריך הזמנה</label><input type="date" id="oc-date"></div>
+    <div id="oc-groups"></div>
+    <div class="modal-btns">
+      <button class="btn-secondary" onclick="closeAllModals()">ביטול</button>
+      <button class="btn-primary" id="oc-confirm" onclick="confirmCreateOrders()">צור הזמנות</button>
+    </div>
+  </div>
+</div>
+
+<!-- Orders: edit order details -->
+<div id="ord-edit-modal" class="modal-backdrop" style="display:none" role="dialog" aria-modal="true" aria-labelledby="ord-edit-title">
+  <div class="modal">
+    <h2 id="ord-edit-title">עריכת הזמנה</h2>
+    <div class="form-group"><label for="oe-date">תאריך הזמנה</label><input type="date" id="oe-date"></div>
+    <div class="form-group"><label for="oe-ref">מספר הזמנה אצל הספק (אופציונלי)</label><input type="text" id="oe-ref" dir="ltr"></div>
+    <div class="form-group checkbox-row"><input type="checkbox" id="oe-rcpt-sent"><label for="oe-rcpt-sent">הקבלה הועברה לחשבונות</label></div>
+    <div class="form-group"><label for="oe-rcpt-num">מספר שניתן לקבלה (אופציונלי)</label><input type="text" id="oe-rcpt-num" dir="ltr"></div>
+    <div class="form-group"><label for="oe-notes">הערות (אופציונלי)</label><textarea id="oe-notes" rows="2"></textarea></div>
+    <div class="modal-btns">
+      <button class="btn-secondary" onclick="closeAllModals()">ביטול</button>
+      <button class="btn-primary" onclick="saveOrdEdit()">שמור</button>
     </div>
   </div>
 </div>
@@ -615,6 +738,11 @@ function initFirebase() {
     historyLog = val || [];
     if (currentTab === 'history') renderHistory();
   });
+  window._fbListen('orders', val => {
+    ordersData = { items: (val && val.items) || {}, orders: (val && val.orders) || {}, suppliers: (val && val.suppliers) || {} };
+    for (const id of [...ordSelected]) { const it = ordersData.items[id]; if (!it || it.status !== 'needed') ordSelected.delete(id); }
+    if (currentTab === 'orders') renderOrders();
+  });
 }
 
 // ── Render ──
@@ -623,6 +751,7 @@ function renderAll() {
   renderThisWeek();
   if (currentTab === 'all-tasks') renderAllTasks();
   if (currentTab === 'history') renderHistory();
+  if (currentTab === 'orders') renderOrders();
   if (currentTab === 'manage') renderManage();
 }
 
@@ -885,16 +1014,17 @@ function renderManage() {
 // ── Actions ──
 window.showTab = function(tab) {
   currentTab = tab;
-  ['this-week','all-tasks','history','manage'].forEach(t => {
+  ['this-week','all-tasks','history','manage','orders'].forEach(t => {
     document.getElementById('tab-'+t).style.display = t === tab ? 'block' : 'none';
   });
   document.querySelectorAll('.tab').forEach((el, i) => {
-    const isActive = ['this-week','all-tasks','history','manage'][i] === tab;
+    const isActive = ['this-week','all-tasks','history','manage','orders'][i] === tab;
     el.classList.toggle('active', isActive);
     el.setAttribute('aria-selected', isActive ? 'true' : 'false');
   });
   if (tab === 'all-tasks') renderAllTasks();
   if (tab === 'history') renderHistory();
+  if (tab === 'orders') renderOrders();
   if (tab === 'manage') renderManage();
 };
 
@@ -1268,6 +1398,447 @@ window.doExport = function() {
 
   XLSX.writeFile(wb, `תחזוקת_מעבדה_${new Date().toISOString().slice(0,10)}.xlsx`);
   closeAllModals();
+  showToast('קובץ Excel הורד בהצלחה');
+};
+
+// ── Orders ──
+// Stored under lab_fert_2024/orders/{items,orders,suppliers}/<id>. Each record is written
+// on its own path (never the whole node) so two people editing at once don't overwrite each other.
+let ordersData = { items: {}, orders: {}, suppliers: {} };
+let ordersView = 'items';
+let ordStatusFilter = '';
+let ordSelected = new Set();
+let ordCreateGroups = [];
+let editingOrdItemId = null, editingOrdSupplierId = null, editingOrdOrderId = null;
+const ORD_CATS = { equipment: 'ציוד', chemical: 'כימיקל', consumable: 'מתכלה' };
+const ORD_SUP_TYPES = { regular: 'ספק קבוע', aliexpress: 'אליאקספרס', other: 'אחר' };
+const ORD_STATUS = { needed: 'נדרש', ordered: 'הוזמן', arrived: 'הגיע' };
+
+function oesc(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+function ordNewId(prefix) { return prefix + Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
+function ordToday() { return new Date().toLocaleDateString('en-CA'); }
+function ordFmt(iso) { if (!iso) return ''; const [y, m, d] = iso.split('-'); return `${d}/${m}/${y}`; }
+function ordSave(path, data) { return window._fbSet('orders/' + path, data); }
+function ordSafeUrl(u) { return /^https?:\/\//i.test(u || '') ? u : ''; }
+function ordSuppliersSorted() { return Object.values(ordersData.suppliers).sort((a, b) => (a.name || '').localeCompare(b.name || '', 'he')); }
+function ordSupOptions(selectedId, placeholder) {
+  return `<option value="">${oesc(placeholder)}</option>` + ordSuppliersSorted().map(s =>
+    `<option value="${s.id}" ${s.id === selectedId ? 'selected' : ''}>${oesc(s.name)}</option>`).join('');
+}
+async function ordRun(fn, okMsg) {
+  try { await fn(); if (okMsg) showToast(okMsg); return true; }
+  catch (e) { console.error(e); showToast('שגיאה בשמירה, נסי שוב'); return false; }
+}
+function ordOrderItems(orderId) { return Object.values(ordersData.items).filter(i => i.orderId === orderId); }
+
+window.setOrdersView = function (v) { ordersView = v; renderOrders(); };
+window.setOrdStatus = function (st) { ordStatusFilter = ordStatusFilter === st ? '' : st; renderOrders(); };
+window.toggleOrdSel = function (id, on) { if (on) ordSelected.add(id); else ordSelected.delete(id); renderOrders(); };
+window.clearOrdSel = function () { ordSelected.clear(); renderOrders(); };
+window.selectAllNeeded = function () {
+  ordFilteredItems().filter(i => i.status === 'needed').forEach(i => ordSelected.add(i.id));
+  renderOrders();
+};
+
+function ordFilteredItems(ignoreStatus) {
+  const q = (document.getElementById('ord-q').value || '').trim().toLowerCase();
+  const cat = document.getElementById('ord-f-cat').value;
+  const sup = document.getElementById('ord-f-sup').value;
+  return Object.values(ordersData.items).filter(i => {
+    if (!ignoreStatus && ordStatusFilter && i.status !== ordStatusFilter) return false;
+    if (cat && i.category !== cat) return false;
+    if (sup && i.supplierId !== sup) return false;
+    if (q) {
+      const o = ordersData.orders[i.orderId];
+      const s = ordersData.suppliers[i.supplierId];
+      const hay = [i.name, i.catalog, i.notes, s && s.name, o && ('#' + o.number), o && o.supplierRef].join(' ').toLowerCase();
+      if (!hay.includes(q)) return false;
+    }
+    return true;
+  });
+}
+
+function renderOrders() {
+  const body = document.getElementById('orders-body');
+  if (!body) return;
+  document.querySelectorAll('#orders-subnav button[data-view]').forEach(b => b.classList.toggle('active', b.dataset.view === ordersView));
+  document.getElementById('orders-filters').style.display = ordersView === 'suppliers' ? 'none' : 'flex';
+  document.getElementById('ord-f-cat').style.display = ordersView === 'items' ? '' : 'none';
+  document.getElementById('ord-f-rcpt').style.display = ordersView === 'orders' ? '' : 'none';
+  const supSel = document.getElementById('ord-f-sup');
+  const cur = supSel.value;
+  supSel.innerHTML = ordSupOptions(cur, 'כל הספקים');
+  supSel.value = ordersData.suppliers[cur] ? cur : '';
+  if (ordersView === 'items') body.innerHTML = ordItemsHtml();
+  else if (ordersView === 'orders') body.innerHTML = ordOrdersHtml();
+  else body.innerHTML = ordSuppliersHtml();
+}
+window.renderOrders = renderOrders;
+
+function ordItemsHtml() {
+  const all = Object.values(ordersData.items);
+  const counts = { needed: 0, ordered: 0, arrived: 0 };
+  all.forEach(i => { if (counts[i.status] !== undefined) counts[i.status]++; });
+  const stat = (st, cls) => `<div class="stat clickable ${cls} ${ordStatusFilter === st ? 'sel' : ''}" role="button" tabindex="0" onclick="setOrdStatus('${st}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();setOrdStatus('${st}')}">
+      <div class="stat-num">${counts[st]}</div><div class="stat-label">${ORD_STATUS[st]}</div></div>`;
+  let h = `<div class="summary-grid">${stat('needed', counts.needed ? 'danger' : '')}${stat('ordered', '')}${stat('arrived', 'success')}</div>`;
+  h += `<button class="add-btn" style="margin:0 0 14px" onclick="openOrdItemModal()">+ הוסף פריט לרשימה</button>`;
+
+  const rank = { needed: 0, ordered: 1, arrived: 2 };
+  const items = ordFilteredItems().sort((a, b) =>
+    (rank[a.status] - rank[b.status]) ||
+    (a.status === 'arrived' ? (b.arrivedDate || '').localeCompare(a.arrivedDate || '') : (b.createdAt || 0) - (a.createdAt || 0)));
+
+  if (!all.length) return h + `<div class="empty"><div class="empty-icon">🛒</div>הרשימה ריקה. הוסיפי פריטים שצריך להזמין.</div>`;
+  if (!items.length) return h + `<div class="empty">אין פריטים שתואמים לסינון</div>`;
+
+  if (items.some(i => i.status === 'needed'))
+    h += `<div style="margin-bottom:10px"><button class="btn-action muted" onclick="selectAllNeeded()">סמן את כל הנדרשים המוצגים</button></div>`;
+
+  h += items.map(i => {
+    const sup = ordersData.suppliers[i.supplierId];
+    const ord = ordersData.orders[i.orderId];
+    const link = ordSafeUrl(i.link);
+    const statusBadge = `<span class="badge badge-${i.status}">${ORD_STATUS[i.status] || oesc(i.status)}</span>`;
+    const orderBadge = ord ? `<span class="badge badge-type">הזמנה #${ord.number}</span>` : '';
+    const info = i.status === 'arrived' && i.arrivedDate ? `<div class="done-info">הגיע ב-${ordFmt(i.arrivedDate)}</div>`
+      : i.status === 'ordered' && ord ? `<div class="done-info">הוזמן ב-${ordFmt(ord.date)}${ord.supplierRef ? ' · מס׳ אצל הספק: ' + oesc(ord.supplierRef) : ''}</div>` : '';
+    const check = i.status === 'needed'
+      ? `<div class="checkbox-row"><input type="checkbox" aria-label="בחירת ${oesc(i.name)}" ${ordSelected.has(i.id) ? 'checked' : ''} onchange="toggleOrdSel('${i.id}',this.checked)"></div>` : '';
+    let actions = '';
+    if (i.status === 'ordered') actions += `<button class="btn-action" onclick="ordMarkArrived('${i.id}')">✓ הגיע</button>`;
+    actions += `<button class="btn-action muted" onclick="openOrdItemModal('${i.id}')">עריכה</button>`;
+    if (i.status === 'ordered') actions += `<button class="btn-action muted" onclick="ordReturnToList('${i.id}')">החזר לרשימה</button>`;
+    if (i.status === 'arrived') actions += `<button class="btn-action muted" onclick="ordUnarrive('${i.id}')">ביטול הגעה</button>`;
+    if (i.status === 'needed') actions += `<button class="btn-action danger" onclick="ordDeleteItem('${i.id}')">מחיקה</button>`;
+    return `<div class="task-card ${i.status === 'arrived' ? 'done' : ''}">${check}
+      <div class="task-left">
+        <div class="task-name">${oesc(i.name)}${i.qty !== '' && i.qty != null ? ` <span style="color:#707070;font-weight:400">· ${oesc(i.qty)} ${oesc(i.unit)}</span>` : ''}</div>
+        <div class="task-meta">
+          ${statusBadge}${orderBadge}
+          <span class="badge badge-device">${ORD_CATS[i.category] || ''}</span>
+          <span class="badge ${sup ? 'badge-assignee' : 'badge-general'}">${sup ? oesc(sup.name) : 'ללא ספק'}</span>
+          ${i.catalog ? `<span>מק״ט: <span dir="ltr">${oesc(i.catalog)}</span></span>` : ''}
+          ${link ? `<a class="link-sm" href="${oesc(link)}" target="_blank" rel="noopener">קישור</a>` : ''}
+        </div>
+        ${info}
+        ${i.notes ? `<div class="task-instructions">${oesc(i.notes)}</div>` : ''}
+      </div>
+      <div class="task-actions" style="flex-wrap:wrap;justify-content:flex-end">${actions}</div>
+    </div>`;
+  }).join('');
+
+  if (ordSelected.size)
+    h += `<div class="sel-bar"><span>${ordSelected.size} פריטים נבחרו</span>
+      <button class="btn-action muted" onclick="clearOrdSel()">נקה</button>
+      <button class="btn-primary" onclick="openCreateOrders()">צור הזמנות</button></div>`;
+  return h;
+}
+
+function ordOrderStatus(o) {
+  const items = ordOrderItems(o.id);
+  const arrived = items.filter(i => i.status === 'arrived').length;
+  if (!items.length) return { label: 'ריקה', cls: 'badge-general', items, arrived };
+  if (arrived === items.length) return { label: 'התקבלה', cls: 'badge-done', items, arrived };
+  if (arrived > 0) return { label: `התקבלה חלקית (${arrived}/${items.length})`, cls: 'badge-upcoming', items, arrived };
+  return { label: 'הוזמנה', cls: 'badge-ordered', items, arrived };
+}
+
+function ordOrdersHtml() {
+  const q = (document.getElementById('ord-q').value || '').trim().toLowerCase();
+  const cat = document.getElementById('ord-f-cat').value;
+  const supF = document.getElementById('ord-f-sup').value;
+  const rcptF = document.getElementById('ord-f-rcpt').value;
+  const orders = Object.values(ordersData.orders).sort((a, b) => (b.number || 0) - (a.number || 0)).filter(o => {
+    const st = ordOrderStatus(o);
+    const sup = ordersData.suppliers[o.supplierId];
+    if (supF && o.supplierId !== supF) return false;
+    if (rcptF === 'no' && o.receiptSent) return false;
+    if (rcptF === 'yes' && !o.receiptSent) return false;
+    if (q) {
+      const hay = ['#' + o.number, sup && sup.name, o.supplierRef, o.receiptNumber, o.notes, ...st.items.map(i => i.name + ' ' + (i.catalog || ''))].join(' ').toLowerCase();
+      if (!hay.includes(q)) return false;
+    }
+    return true;
+  });
+  if (!Object.keys(ordersData.orders).length)
+    return `<div class="empty"><div class="empty-icon">📦</div>עדיין אין הזמנות. סמני פריטים ברשימה ולחצי ״צור הזמנות״.</div>`;
+  if (!orders.length) return `<div class="empty">אין הזמנות שתואמות לחיפוש</div>`;
+  return orders.map(o => {
+    const st = ordOrderStatus(o);
+    const sup = ordersData.suppliers[o.supplierId];
+    const lines = st.items.map(i => `<div class="order-line">
+        <div><strong style="font-weight:500">${oesc(i.name)}</strong> <span style="color:#707070">· ${oesc(i.qty)} ${oesc(i.unit)}</span></div>
+        <div style="display:flex;align-items:center;gap:6px">
+          ${i.status === 'arrived' ? `<span class="badge badge-done">הגיע${i.arrivedDate ? ' ' + ordFmt(i.arrivedDate) : ''}</span>`
+            : `<span class="badge badge-ordered">הוזמן</span><button class="btn-action" style="padding:3px 10px;font-size:12px" onclick="ordMarkArrived('${i.id}')">✓ הגיע</button>`}
+        </div></div>`).join('');
+    return `<div class="order-card">
+      <div class="order-head">
+        <div>
+          <div class="order-title">הזמנה #${o.number} · ${sup ? oesc(sup.name) : 'ספק לא ידוע'}</div>
+          <div class="task-meta" style="margin-top:4px"><span>${ordFmt(o.date)}</span>
+            ${o.supplierRef ? `<span>· מס׳ אצל הספק: <span dir="ltr">${oesc(o.supplierRef)}</span></span>` : ''}</div>
+        </div>
+        <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px">
+          <span class="badge ${st.cls}">${st.label}</span>
+          <span class="badge ${o.receiptSent ? 'badge-done' : 'badge-needed'}">${o.receiptSent ? 'קבלה הועברה' + (o.receiptNumber ? ' · ' + oesc(o.receiptNumber) : '') : 'קבלה לא הועברה'}</span>
+        </div>
+      </div>
+      ${o.notes ? `<div class="task-instructions" style="margin:0 0 6px">${oesc(o.notes)}</div>` : ''}
+      ${lines}
+      <div class="order-actions">
+        ${st.items.length && st.arrived < st.items.length ? `<button class="btn-action" onclick="ordMarkOrderArrived('${o.id}')">✓ סמן את כל ההזמנה כהגיעה</button>` : ''}
+        ${o.receiptSent ? '' : `<button class="btn-action" onclick="ordMarkReceiptSent('${o.id}')">📄 סמן קבלה כהועברה</button>`}
+        <button class="btn-action muted" onclick="openOrdEdit('${o.id}')">עריכת פרטים</button>
+        <button class="btn-action danger" onclick="ordDeleteOrder('${o.id}')">מחיקת הזמנה</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function ordSuppliersHtml() {
+  let h = `<button class="add-btn" style="margin:0 0 14px" onclick="openOrdSupplierModal()">+ הוסף ספק</button>`;
+  const sups = ordSuppliersSorted();
+  if (!sups.length) return h + `<div class="empty"><div class="empty-icon">🏭</div>עדיין אין ספקים. הוסיפי את הספקים הקבועים ואת אליאקספרס.</div>`;
+  return h + sups.map(s => {
+    const n = Object.values(ordersData.orders).filter(o => o.supplierId === s.id).length;
+    const site = ordSafeUrl(s.site);
+    return `<div class="task-card"><div class="task-left">
+        <div class="task-name">${oesc(s.name)}</div>
+        <div class="task-meta"><span class="badge badge-type">${ORD_SUP_TYPES[s.type] || ''}</span><span>${n} הזמנות</span>
+          ${site ? `<a class="link-sm" href="${oesc(site)}" target="_blank" rel="noopener">אתר</a>` : ''}</div>
+        ${s.notes ? `<div class="task-instructions">${oesc(s.notes)}</div>` : ''}
+      </div>
+      <div class="task-actions"><button class="btn-action muted" onclick="openOrdSupplierModal('${s.id}')">עריכה</button>
+        <button class="btn-action danger" onclick="ordDeleteSupplier('${s.id}')">מחיקה</button></div></div>`;
+  }).join('');
+}
+
+// ── Item modal ──
+window.openOrdItemModal = function (id) {
+  lastFocusedEl = document.activeElement;
+  editingOrdItemId = id || null;
+  const it = id ? ordersData.items[id] : null;
+  document.getElementById('ord-item-title').textContent = it ? 'עריכת פריט' : 'פריט חדש להזמנה';
+  document.getElementById('oi-name').value = it ? it.name : '';
+  document.getElementById('oi-cat').value = it ? it.category : 'consumable';
+  document.getElementById('oi-qty').value = it ? it.qty : 1;
+  document.getElementById('oi-unit').value = it ? it.unit : '';
+  const supSel = document.getElementById('oi-sup');
+  supSel.innerHTML = ordSupOptions(it ? it.supplierId : '', '— ללא ספק (לבחור בהמשך) —');
+  const locked = !!(it && it.orderId);
+  supSel.disabled = locked;
+  document.getElementById('oi-sup-hint').textContent = locked ? 'הפריט כבר שייך להזמנה, לכן אי אפשר לשנות ספק' : '';
+  document.getElementById('oi-catalog').value = it ? it.catalog : '';
+  document.getElementById('oi-link').value = it ? it.link : '';
+  document.getElementById('oi-notes').value = it ? it.notes : '';
+  document.getElementById('oi-save-more').style.display = it ? 'none' : '';
+  document.getElementById('ord-item-modal').style.display = 'flex';
+  document.getElementById('oi-name').focus();
+};
+
+window.saveOrdItem = async function (addMore) {
+  const name = document.getElementById('oi-name').value.trim();
+  if (!name) { showToast('נא למלא שם פריט'); return; }
+  const qtyRaw = document.getElementById('oi-qty').value;
+  const link = document.getElementById('oi-link').value.trim();
+  const old = editingOrdItemId ? ordersData.items[editingOrdItemId] : null;
+  const id = old ? old.id : ordNewId('i');
+  const item = Object.assign({}, old || { status: 'needed', orderId: '', arrivedDate: '', createdAt: Date.now() }, {
+    id, name,
+    category: document.getElementById('oi-cat').value,
+    qty: qtyRaw === '' ? '' : Number(qtyRaw),
+    unit: document.getElementById('oi-unit').value.trim(),
+    supplierId: old && old.orderId ? old.supplierId : document.getElementById('oi-sup').value,
+    catalog: document.getElementById('oi-catalog').value.trim(),
+    link, notes: document.getElementById('oi-notes').value.trim()
+  });
+  const ok = await ordRun(() => ordSave('items/' + id, item), addMore ? 'נוסף: ' + name : 'נשמר');
+  if (!ok) return;
+  if (addMore && !old) {
+    document.getElementById('oi-name').value = '';
+    document.getElementById('oi-catalog').value = '';
+    document.getElementById('oi-link').value = '';
+    document.getElementById('oi-notes').value = '';
+    document.getElementById('oi-qty').value = 1;
+    document.getElementById('oi-name').focus();
+  } else closeAllModals();
+};
+
+window.ordDeleteItem = function (id) {
+  const it = ordersData.items[id];
+  if (!it || !confirm(`למחוק את ״${it.name}״ מהרשימה?`)) return;
+  ordSelected.delete(id);
+  ordRun(() => ordSave('items/' + id, null), 'נמחק');
+};
+
+// ── Status changes ──
+window.ordMarkArrived = function (id) {
+  const it = ordersData.items[id]; if (!it) return;
+  ordRun(() => ordSave('items/' + id, Object.assign({}, it, { status: 'arrived', arrivedDate: ordToday() })), 'סומן כהגיע');
+};
+window.ordUnarrive = function (id) {
+  const it = ordersData.items[id]; if (!it) return;
+  ordRun(() => ordSave('items/' + id, Object.assign({}, it, { status: 'ordered', arrivedDate: '' })));
+};
+window.ordReturnToList = function (id) {
+  const it = ordersData.items[id]; if (!it) return;
+  if (!confirm(`להחזיר את ״${it.name}״ לרשימה ולהוציא אותו מההזמנה?`)) return;
+  ordRun(() => ordSave('items/' + id, Object.assign({}, it, { status: 'needed', orderId: '', arrivedDate: '' })), 'הוחזר לרשימה');
+};
+window.ordMarkOrderArrived = function (orderId) {
+  const today = ordToday();
+  const pending = ordOrderItems(orderId).filter(i => i.status !== 'arrived');
+  ordRun(() => Promise.all(pending.map(i => ordSave('items/' + i.id, Object.assign({}, i, { status: 'arrived', arrivedDate: today })))), 'ההזמנה סומנה כהגיעה');
+};
+window.ordMarkReceiptSent = function (orderId) {
+  const o = ordersData.orders[orderId]; if (!o) return;
+  ordRun(() => ordSave('orders/' + orderId, Object.assign({}, o, { receiptSent: true })), 'סומן: קבלה הועברה');
+};
+window.ordDeleteOrder = function (orderId) {
+  const o = ordersData.orders[orderId]; if (!o) return;
+  const items = ordOrderItems(orderId);
+  if (!confirm(`למחוק את הזמנה #${o.number}? ${items.length} הפריטים שבה יחזרו לרשימה כ״נדרש״.`)) return;
+  ordRun(async () => {
+    await Promise.all(items.map(i => ordSave('items/' + i.id, Object.assign({}, i, { status: 'needed', orderId: '', arrivedDate: '' }))));
+    await ordSave('orders/' + orderId, null);
+  }, 'ההזמנה נמחקה');
+};
+
+// ── Create orders from selection ──
+window.openCreateOrders = function () {
+  const items = [...ordSelected].map(id => ordersData.items[id]).filter(i => i && i.status === 'needed');
+  if (!items.length) return;
+  if (!Object.keys(ordersData.suppliers).length) { showToast('קודם יש להוסיף ספקים (לשונית ספקים)'); return; }
+  lastFocusedEl = document.activeElement;
+  const by = {};
+  items.forEach(i => { (by[i.supplierId || ''] = by[i.supplierId || ''] || []).push(i); });
+  ordCreateGroups = Object.values(by).map(list => ({ supplierId: list[0].supplierId || '', itemIds: list.map(i => i.id) }));
+  document.getElementById('oc-date').value = ordToday();
+  document.getElementById('oc-groups').innerHTML = ordCreateGroups.map((g, gi) => `<div class="group-box">
+      <div class="form-group" style="margin-bottom:8px"><label for="ocg-sup-${gi}">ספק</label>
+        <select id="ocg-sup-${gi}">${ordSupOptions(g.supplierId, '— בחרי ספק —')}</select></div>
+      <div class="form-group" style="margin-bottom:0"><label for="ocg-ref-${gi}">מספר הזמנה אצל הספק (אופציונלי)</label>
+        <input type="text" id="ocg-ref-${gi}" dir="ltr"></div>
+      <ul>${g.itemIds.map(id => { const i = ordersData.items[id]; return `<li>${oesc(i.name)} · ${oesc(i.qty)} ${oesc(i.unit)}</li>`; }).join('')}</ul>
+    </div>`).join('');
+  document.getElementById('oc-confirm').disabled = false;
+  document.getElementById('ord-create-modal').style.display = 'flex';
+};
+
+window.confirmCreateOrders = async function () {
+  const date = document.getElementById('oc-date').value || ordToday();
+  const merged = {};
+  let missing = false;
+  ordCreateGroups.forEach((g, gi) => {
+    const sid = document.getElementById('ocg-sup-' + gi).value;
+    const ref = document.getElementById('ocg-ref-' + gi).value.trim();
+    if (!sid) { missing = true; return; }
+    const m = merged[sid] = merged[sid] || { itemIds: [], ref: '' };
+    m.itemIds.push(...g.itemIds);
+    if (ref && !m.ref) m.ref = ref;
+  });
+  if (missing) { showToast('יש לבחור ספק לכל קבוצה'); return; }
+  const btn = document.getElementById('oc-confirm');
+  btn.disabled = true;
+  let num = Object.values(ordersData.orders).reduce((mx, o) => Math.max(mx, o.number || 0), 0) + 1;
+  const entries = Object.entries(merged);
+  const ok = await ordRun(async () => {
+    const writes = [];
+    for (const [sid, g] of entries) {
+      const id = ordNewId('o');
+      writes.push(ordSave('orders/' + id, { id, number: num++, supplierId: sid, date, supplierRef: g.ref, notes: '', createdAt: Date.now() }));
+      g.itemIds.forEach(iid => writes.push(ordSave('items/' + iid, Object.assign({}, ordersData.items[iid], { status: 'ordered', orderId: id, supplierId: sid, arrivedDate: '' }))));
+    }
+    await Promise.all(writes);
+  }, entries.length === 1 ? 'נוצרה הזמנה אחת' : `נוצרו ${entries.length} הזמנות`);
+  if (!ok) { btn.disabled = false; return; }
+  ordSelected.clear();
+  closeAllModals();
+  ordersView = 'orders';
+  renderOrders();
+};
+
+// ── Edit order details ──
+window.openOrdEdit = function (id) {
+  const o = ordersData.orders[id]; if (!o) return;
+  lastFocusedEl = document.activeElement;
+  editingOrdOrderId = id;
+  const sup = ordersData.suppliers[o.supplierId];
+  document.getElementById('ord-edit-title').textContent = `הזמנה #${o.number} · ${sup ? sup.name : ''}`;
+  document.getElementById('oe-date').value = o.date || '';
+  document.getElementById('oe-ref').value = o.supplierRef || '';
+  document.getElementById('oe-notes').value = o.notes || '';
+  document.getElementById('oe-rcpt-sent').checked = !!o.receiptSent;
+  document.getElementById('oe-rcpt-num').value = o.receiptNumber || '';
+  document.getElementById('ord-edit-modal').style.display = 'flex';
+};
+window.saveOrdEdit = async function () {
+  const o = ordersData.orders[editingOrdOrderId]; if (!o) return;
+  const upd = Object.assign({}, o, {
+    date: document.getElementById('oe-date').value || o.date,
+    supplierRef: document.getElementById('oe-ref').value.trim(),
+    receiptSent: document.getElementById('oe-rcpt-sent').checked,
+    receiptNumber: document.getElementById('oe-rcpt-num').value.trim(),
+    notes: document.getElementById('oe-notes').value.trim()
+  });
+  if (await ordRun(() => ordSave('orders/' + o.id, upd), 'נשמר')) closeAllModals();
+};
+
+// ── Suppliers ──
+window.openOrdSupplierModal = function (id) {
+  lastFocusedEl = document.activeElement;
+  editingOrdSupplierId = id || null;
+  const s = id ? ordersData.suppliers[id] : null;
+  document.getElementById('ord-sup-title').textContent = s ? 'עריכת ספק' : 'ספק חדש';
+  document.getElementById('os-name').value = s ? s.name : '';
+  document.getElementById('os-type').value = s ? s.type : 'regular';
+  document.getElementById('os-site').value = s ? s.site : '';
+  document.getElementById('os-notes').value = s ? s.notes : '';
+  document.getElementById('ord-sup-modal').style.display = 'flex';
+  document.getElementById('os-name').focus();
+};
+window.saveOrdSupplier = async function () {
+  const name = document.getElementById('os-name').value.trim();
+  if (!name) { showToast('נא למלא שם ספק'); return; }
+  const old = editingOrdSupplierId ? ordersData.suppliers[editingOrdSupplierId] : null;
+  const id = old ? old.id : ordNewId('s');
+  const sup = { id, name, type: document.getElementById('os-type').value, site: document.getElementById('os-site').value.trim(), notes: document.getElementById('os-notes').value.trim() };
+  if (await ordRun(() => ordSave('suppliers/' + id, sup), 'נשמר')) closeAllModals();
+};
+window.ordDeleteSupplier = function (id) {
+  const s = ordersData.suppliers[id]; if (!s) return;
+  const used = Object.values(ordersData.items).some(i => i.supplierId === id) || Object.values(ordersData.orders).some(o => o.supplierId === id);
+  if (used) { showToast('אי אפשר למחוק ספק שיש לו פריטים או הזמנות'); return; }
+  if (!confirm(`למחוק את הספק ״${s.name}״?`)) return;
+  ordRun(() => ordSave('suppliers/' + id, null), 'נמחק');
+};
+
+// ── Excel export ──
+window.ordExport = function () {
+  if (typeof XLSX === 'undefined') { showToast('ספריית Excel לא נטענה'); return; }
+  const supName = id => (ordersData.suppliers[id] || {}).name || '';
+  const itemsRows = Object.values(ordersData.items).map(i => {
+    const o = ordersData.orders[i.orderId] || {};
+    return { 'פריט': i.name, 'סוג': ORD_CATS[i.category] || '', 'כמות': i.qty, 'יחידה': i.unit, 'מק״ט': i.catalog, 'ספק': supName(i.supplierId),
+      'סטטוס': ORD_STATUS[i.status] || '', 'מספר הזמנה': o.number || '', 'מס׳ הזמנה אצל הספק': o.supplierRef || '',
+      'קבלה הועברה': o.receiptSent ? 'כן' : 'לא', 'מס׳ קבלה': o.receiptNumber || '',
+      'תאריך הזמנה': o.date || '', 'תאריך הגעה': i.arrivedDate || '', 'קישור': i.link, 'הערות': i.notes };
+  });
+  const orderRows = Object.values(ordersData.orders).sort((a, b) => a.number - b.number).map(o => {
+    const st = ordOrderStatus(o);
+    return { 'מספר הזמנה': o.number, 'ספק': supName(o.supplierId), 'תאריך': o.date, 'מס׳ הזמנה אצל הספק': o.supplierRef, 'סטטוס': st.label,
+      'קבלה הועברה': o.receiptSent ? 'כן' : 'לא', 'מס׳ קבלה': o.receiptNumber || '',
+      'פריטים': st.items.map(i => `${i.name} (${i.qty} ${i.unit})`).join('; '), 'הערות': o.notes };
+  });
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(itemsRows), 'פריטים');
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(orderRows), 'הזמנות');
+  wb.Workbook = { Views: [{ RTL: true }] };
+  XLSX.writeFile(wb, `lab-orders-${ordToday()}.xlsx`);
   showToast('קובץ Excel הורד בהצלחה');
 };
 
