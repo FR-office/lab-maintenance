@@ -108,7 +108,9 @@ a:focus-visible,button:focus-visible,select:focus-visible,input:focus-visible,te
 .sel-bar{position:sticky;bottom:12px;z-index:5;display:flex;align-items:center;gap:10px;background:#1a1a1a;color:#fff;border-radius:12px;padding:10px 14px;margin-top:12px;box-shadow:0 8px 24px rgba(0,0,0,.2)}
 .sel-bar span{flex:1;font-size:14px}
 .sel-bar .btn-primary{background:#fff;color:#1a1a1a}
-.sel-bar .btn-action{color:#ddd}
+.sel-bar .btn-action{background:transparent;color:#fff;border-color:#666}
+.sel-bar .btn-action:hover{background:#333}
+.sel-bar .btn-action.muted{color:#ccc;border-color:transparent}
 .order-card{background:#fff;border:1px solid #e8e8e5;border-radius:10px;padding:14px 16px;margin-bottom:10px}
 .order-head{display:flex;justify-content:space-between;gap:8px;align-items:flex-start;margin-bottom:8px}
 .order-title{font-size:15px;font-weight:600}
@@ -118,6 +120,13 @@ a:focus-visible,button:focus-visible,select:focus-visible,input:focus-visible,te
 .group-box ul{margin:8px 18px 0 0;font-size:13px;color:#444}
 .link-sm{font-size:12px;color:#1a5fb4;text-decoration:none}
 .link-sm:hover{text-decoration:underline}
+
+.imp-row{display:flex;gap:6px;margin-bottom:6px;align-items:center}
+.imp-row input{padding:7px 8px;font-size:13px;min-width:0}
+.imp-head{font-size:12px;color:#707070}
+.imp-box{max-height:42vh;overflow:auto;margin:10px 0}
+.btn-row{display:flex;gap:8px;margin:0 0 14px}
+.btn-row .add-btn{margin:0;flex:1}
 </style>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 </head>
@@ -405,7 +414,7 @@ a:focus-visible,button:focus-visible,select:focus-visible,input:focus-visible,te
 <div id="ord-item-modal" class="modal-backdrop" style="display:none" role="dialog" aria-modal="true" aria-labelledby="ord-item-title">
   <div class="modal">
     <h2 id="ord-item-title">פריט להזמנה</h2>
-    <div class="form-group"><label for="oi-name">שם הפריט</label><input type="text" id="oi-name" placeholder="לדוג׳: קצוות פיפטה 200µl"></div>
+    <div class="form-group"><label for="oi-name">שם הפריט</label><input type="text" id="oi-name" list="oi-names" autocomplete="off" oninput="ordAutofill()" placeholder="לדוג׳: קצוות פיפטה 200µl"><datalist id="oi-names"></datalist></div>
     <div class="form-group"><label for="oi-cat">סוג</label>
       <select id="oi-cat"><option value="consumable">מתכלה</option><option value="chemical">כימיקל</option><option value="equipment">ציוד</option></select></div>
     <div style="display:flex;gap:10px">
@@ -421,6 +430,25 @@ a:focus-visible,button:focus-visible,select:focus-visible,input:focus-visible,te
       <button class="btn-secondary" onclick="closeAllModals()">ביטול</button>
       <button class="btn-secondary" id="oi-save-more" onclick="saveOrdItem(true)">שמור והוסף עוד</button>
       <button class="btn-primary" onclick="saveOrdItem(false)">שמור</button>
+    </div>
+  </div>
+</div>
+
+<!-- Orders: import list -->
+<div id="ord-import-modal" class="modal-backdrop" style="display:none" role="dialog" aria-modal="true" aria-labelledby="ord-import-title">
+  <div class="modal" style="max-width:600px">
+    <h2 id="ord-import-title">ייבוא רשימה</h2>
+    <p style="font-size:13px;color:#666;margin-bottom:10px">הדביקי רשימה, שורה לכל פריט. אפשר להעתיק ישר מ-Excel או מטבלה (עמודות: שם, כמות, יחידה, מק״ט), או לכתוב בצורה חופשית כמו <span dir="ltr">Ethanol x 3</span>. אם בשורה הראשונה יש כותרות (שם, כמות, יחידה, מק״ט), הן יזוהו אוטומטית.</p>
+    <div class="form-group"><label for="imp-text">הרשימה</label><textarea id="imp-text" rows="6" oninput="ordImportParse()"></textarea></div>
+    <div style="display:flex;gap:10px">
+      <div class="form-group" style="flex:1"><label for="imp-cat">סוג לכל הפריטים</label>
+        <select id="imp-cat"><option value="consumable">מתכלה</option><option value="chemical">כימיקל</option><option value="equipment">ציוד</option></select></div>
+      <div class="form-group" style="flex:1"><label for="imp-sup">ספק לכל הפריטים</label><select id="imp-sup"></select></div>
+    </div>
+    <div id="imp-preview"></div>
+    <div class="modal-btns">
+      <button class="btn-secondary" onclick="closeAllModals()">ביטול</button>
+      <button class="btn-primary" id="imp-confirm" onclick="ordImportConfirm()" disabled>הוסף לרשימה</button>
     </div>
   </div>
 </div>
@@ -451,6 +479,20 @@ a:focus-visible,button:focus-visible,select:focus-visible,input:focus-visible,te
     <div class="modal-btns">
       <button class="btn-secondary" onclick="closeAllModals()">ביטול</button>
       <button class="btn-primary" id="oc-confirm" onclick="confirmCreateOrders()">צור הזמנות</button>
+    </div>
+  </div>
+</div>
+
+<!-- Orders: add selected items to an existing order -->
+<div id="ord-addto-modal" class="modal-backdrop" style="display:none" role="dialog" aria-modal="true" aria-labelledby="ord-addto-title">
+  <div class="modal" style="max-width:520px">
+    <h2 id="ord-addto-title">הוספה להזמנה קיימת</h2>
+    <div class="form-group"><label for="oa-order">הזמנה</label><select id="oa-order" onchange="ordAddWarn()"></select></div>
+    <div id="oa-warn" style="font-size:13px;color:#a55209;margin-bottom:10px"></div>
+    <div class="group-box"><strong style="font-size:13px;font-weight:500">הפריטים שיתווספו:</strong><ul id="oa-items"></ul></div>
+    <div class="modal-btns">
+      <button class="btn-secondary" onclick="closeAllModals()">ביטול</button>
+      <button class="btn-primary" id="oa-confirm" onclick="confirmAddToOrder()">הוסף להזמנה</button>
     </div>
   </div>
 </div>
@@ -1484,7 +1526,8 @@ function ordItemsHtml() {
   const stat = (st, cls) => `<div class="stat clickable ${cls} ${ordStatusFilter === st ? 'sel' : ''}" role="button" tabindex="0" onclick="setOrdStatus('${st}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();setOrdStatus('${st}')}">
       <div class="stat-num">${counts[st]}</div><div class="stat-label">${ORD_STATUS[st]}</div></div>`;
   let h = `<div class="summary-grid">${stat('needed', counts.needed ? 'danger' : '')}${stat('ordered', '')}${stat('arrived', 'success')}</div>`;
-  h += `<button class="add-btn" style="margin:0 0 14px" onclick="openOrdItemModal()">+ הוסף פריט לרשימה</button>`;
+  h += `<div class="btn-row"><button class="add-btn" onclick="openOrdItemModal()">+ הוסף פריט לרשימה</button>
+    <button class="add-btn" onclick="openOrdImport()">📋 ייבוא רשימה</button></div>`;
 
   const rank = { needed: 0, ordered: 1, arrived: 2 };
   const items = ordFilteredItems().sort((a, b) =>
@@ -1511,7 +1554,7 @@ function ordItemsHtml() {
     if (i.status === 'ordered') actions += `<button class="btn-action" onclick="ordMarkArrived('${i.id}')">✓ הגיע</button>`;
     actions += `<button class="btn-action muted" onclick="openOrdItemModal('${i.id}')">עריכה</button>`;
     if (i.status === 'ordered') actions += `<button class="btn-action muted" onclick="ordReturnToList('${i.id}')">החזר לרשימה</button>`;
-    if (i.status === 'arrived') actions += `<button class="btn-action muted" onclick="ordUnarrive('${i.id}')">ביטול הגעה</button>`;
+    if (i.status === 'arrived') actions += `<button class="btn-action" onclick="ordReorder('${i.id}')">↻ הזמן שוב</button><button class="btn-action muted" onclick="ordUnarrive('${i.id}')">ביטול הגעה</button>`;
     if (i.status === 'needed') actions += `<button class="btn-action danger" onclick="ordDeleteItem('${i.id}')">מחיקה</button>`;
     return `<div class="task-card ${i.status === 'arrived' ? 'done' : ''}">${check}
       <div class="task-left">
@@ -1533,6 +1576,7 @@ function ordItemsHtml() {
   if (ordSelected.size)
     h += `<div class="sel-bar"><span>${ordSelected.size} פריטים נבחרו</span>
       <button class="btn-action muted" onclick="clearOrdSel()">נקה</button>
+      ${Object.keys(ordersData.orders).length ? `<button class="btn-action" onclick="openAddToOrder()">הוסף להזמנה קיימת</button>` : ''}
       <button class="btn-primary" onclick="openCreateOrders()">צור הזמנות</button></div>`;
   return h;
 }
@@ -1635,6 +1679,7 @@ window.openOrdItemModal = function (id) {
   document.getElementById('oi-catalog').value = it ? it.catalog : '';
   document.getElementById('oi-link').value = it ? it.link : '';
   document.getElementById('oi-notes').value = it ? it.notes : '';
+  document.getElementById('oi-names').innerHTML = [...new Set(Object.values(ordersData.items).map(i => i.name))].map(n => `<option value="${oesc(n)}">`).join('');
   document.getElementById('oi-save-more').style.display = it ? 'none' : '';
   document.getElementById('ord-item-modal').style.display = 'flex';
   document.getElementById('oi-name').focus();
@@ -1762,6 +1807,50 @@ window.confirmCreateOrders = async function () {
   renderOrders();
 };
 
+// ── Add selected items to an existing order ──
+let ordAddIds = [];
+window.openAddToOrder = function () {
+  const items = [...ordSelected].map(id => ordersData.items[id]).filter(i => i && i.status === 'needed');
+  if (!items.length) return;
+  const orders = Object.values(ordersData.orders).sort((a, b) => (b.number || 0) - (a.number || 0));
+  if (!orders.length) { showToast('אין עדיין הזמנות, יש ליצור הזמנה חדשה'); return; }
+  lastFocusedEl = document.activeElement;
+  ordAddIds = items.map(i => i.id);
+  const sups = new Set(items.map(i => i.supplierId).filter(Boolean));
+  const common = sups.size === 1 ? [...sups][0] : '';
+  const preferred = (common && orders.find(o => o.supplierId === common)) || orders[0];
+  document.getElementById('oa-order').innerHTML = orders.map(o => {
+    const sup = ordersData.suppliers[o.supplierId];
+    return `<option value="${o.id}" ${o.id === preferred.id ? 'selected' : ''}>הזמנה #${o.number} · ${oesc(sup ? sup.name : 'ספק לא ידוע')} · ${ordFmt(o.date)} · ${oesc(ordOrderStatus(o).label)}</option>`;
+  }).join('');
+  document.getElementById('oa-items').innerHTML = items.map(i => `<li>${oesc(i.name)} · ${oesc(i.qty)} ${oesc(i.unit)}</li>`).join('');
+  document.getElementById('oa-confirm').disabled = false;
+  ordAddWarn();
+  document.getElementById('ord-addto-modal').style.display = 'flex';
+};
+window.ordAddWarn = function () {
+  const o = ordersData.orders[document.getElementById('oa-order').value];
+  const sup = o && ordersData.suppliers[o.supplierId];
+  const diff = ordAddIds.map(id => ordersData.items[id]).filter(i => i && i.supplierId && o && i.supplierId !== o.supplierId);
+  document.getElementById('oa-warn').textContent = diff.length
+    ? `שימי לב: ${diff.length} מהפריטים הוגדרו לספק אחר. הם יירשמו תחת ${sup ? sup.name : 'ספק ההזמנה'}.` : '';
+};
+window.confirmAddToOrder = async function () {
+  const o = ordersData.orders[document.getElementById('oa-order').value];
+  if (!o) return;
+  const items = ordAddIds.map(id => ordersData.items[id]).filter(i => i && i.status === 'needed');
+  if (!items.length) { closeAllModals(); return; }
+  const btn = document.getElementById('oa-confirm'); btn.disabled = true;
+  const ok = await ordRun(() => Promise.all(items.map(i =>
+    ordSave('items/' + i.id, Object.assign({}, i, { status: 'ordered', orderId: o.id, supplierId: o.supplierId, arrivedDate: '' })))),
+    `נוספו ${items.length} פריטים להזמנה #${o.number}`);
+  if (!ok) { btn.disabled = false; return; }
+  ordSelected.clear();
+  closeAllModals();
+  ordersView = 'orders';
+  renderOrders();
+};
+
 // ── Edit order details ──
 window.openOrdEdit = function (id) {
   const o = ordersData.orders[id]; if (!o) return;
@@ -1840,6 +1929,116 @@ window.ordExport = function () {
   wb.Workbook = { Views: [{ RTL: true }] };
   XLSX.writeFile(wb, `lab-orders-${ordToday()}.xlsx`);
   showToast('קובץ Excel הורד בהצלחה');
+};
+
+// ── Re-order & autofill from past items ──
+window.ordAutofill = function () {
+  if (editingOrdItemId) return;
+  const name = document.getElementById('oi-name').value.trim().toLowerCase();
+  if (!name) return;
+  const past = Object.values(ordersData.items).filter(i => (i.name || '').trim().toLowerCase() === name)
+    .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0))[0];
+  if (!past) return;
+  const empty = id => !document.getElementById(id).value;
+  if (empty('oi-sup') && past.supplierId && ordersData.suppliers[past.supplierId]) document.getElementById('oi-sup').value = past.supplierId;
+  if (empty('oi-unit')) document.getElementById('oi-unit').value = past.unit || '';
+  if (empty('oi-catalog')) document.getElementById('oi-catalog').value = past.catalog || '';
+  if (empty('oi-link')) document.getElementById('oi-link').value = past.link || '';
+  document.getElementById('oi-cat').value = past.category || 'consumable';
+};
+
+window.ordReorder = function (id) {
+  const it = ordersData.items[id]; if (!it) return;
+  const dup = Object.values(ordersData.items).some(i => i.status === 'needed' && (i.name || '').toLowerCase() === (it.name || '').toLowerCase() && i.supplierId === it.supplierId);
+  if (dup) { showToast('הפריט כבר ברשימה'); return; }
+  const nid = ordNewId('i');
+  ordRun(() => ordSave('items/' + nid, Object.assign({}, it, { id: nid, status: 'needed', orderId: '', arrivedDate: '', createdAt: Date.now() })), 'נוסף שוב לרשימה');
+};
+
+// ── Import list ──
+let ordImportRows = [];
+const IMP_HEADERS = {
+  name: ['שם', 'פריט', 'שם פריט', 'תיאור', 'name', 'item', 'description', 'product'],
+  qty: ['כמות', 'כמ׳', "כמ'", 'qty', 'quantity', 'amount'],
+  unit: ['יחידה', 'יחידות', 'יח׳', "יח'", 'unit', 'uom'],
+  catalog: ['מק״ט', 'מקט', 'מק"ט', 'catalog', 'cat no', 'cat. no.', 'sku', 'part number', 'part no']
+};
+function impSplit(line) {
+  if (line.includes('\t')) return line.split('\t').map(x => x.trim());
+  if (line.includes(';')) return line.split(';').map(x => x.trim());
+  if ((line.match(/ \| /g) || []).length) return line.split('|').map(x => x.trim());
+  return null;
+}
+function impParse(text) {
+  const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+  let map = { name: 0, qty: 1, unit: 2, catalog: 3 };
+  if (lines.length) {
+    const first = impSplit(lines[0]);
+    if (first) {
+      const found = {};
+      first.forEach((c, idx) => {
+        const key = c.toLowerCase().replace(/[:.]+$/, '');
+        for (const f in IMP_HEADERS) if (IMP_HEADERS[f].includes(key) && found[f] === undefined) found[f] = idx;
+      });
+      if (found.name !== undefined && Object.keys(found).length >= 2) { map = found; lines.shift(); }
+    }
+  }
+  return lines.map(line => {
+    const cols = impSplit(line);
+    if (cols) {
+      const g = f => (map[f] !== undefined && cols[map[f]] !== undefined ? cols[map[f]] : '');
+      const q = parseFloat(String(g('qty')).replace(',', '.'));
+      return { name: g('name'), qty: isNaN(q) ? 1 : q, unit: g('unit'), catalog: g('catalog') };
+    }
+    let m = line.match(/^(.*?)\s*[x×*]\s*(\d+(?:[.,]\d+)?)\s*$/i);
+    if (m) return { name: m[1], qty: parseFloat(m[2].replace(',', '.')), unit: '', catalog: '' };
+    m = line.match(/^(\d+(?:[.,]\d+)?)\s*[x×*]\s+(.+)$/i);
+    if (m) return { name: m[2], qty: parseFloat(m[1].replace(',', '.')), unit: '', catalog: '' };
+    return { name: line, qty: 1, unit: '', catalog: '' };
+  }).filter(r => r.name);
+}
+window.openOrdImport = function () {
+  lastFocusedEl = document.activeElement;
+  document.getElementById('imp-text').value = '';
+  document.getElementById('imp-sup').innerHTML = ordSupOptions('', '— ללא ספק (לבחור בהמשך) —');
+  ordImportRows = [];
+  ordImportRender();
+  document.getElementById('ord-import-modal').style.display = 'flex';
+  document.getElementById('imp-text').focus();
+};
+window.ordImportParse = function () {
+  ordImportRows = impParse(document.getElementById('imp-text').value);
+  ordImportRender();
+};
+function ordImportRender() {
+  const box = document.getElementById('imp-preview');
+  document.getElementById('imp-confirm').disabled = !ordImportRows.length;
+  document.getElementById('imp-confirm').textContent = ordImportRows.length ? `הוסף ${ordImportRows.length} פריטים לרשימה` : 'הוסף לרשימה';
+  if (!ordImportRows.length) { box.innerHTML = ''; return; }
+  box.innerHTML = `<div class="imp-head">תצוגה מקדימה (אפשר לתקן לפני ההוספה)</div><div class="imp-box">` + ordImportRows.map((r, i) => `<div class="imp-row">
+      <input style="flex:3" aria-label="שם" value="${oesc(r.name)}" oninput="ordImportRows[${i}].name=this.value">
+      <input style="width:64px" type="number" step="any" aria-label="כמות" value="${oesc(r.qty)}" oninput="ordImportRows[${i}].qty=this.value===''?'':Number(this.value)">
+      <input style="width:78px" aria-label="יחידה" value="${oesc(r.unit)}" oninput="ordImportRows[${i}].unit=this.value">
+      <input style="flex:2" dir="ltr" aria-label="מק״ט" value="${oesc(r.catalog)}" oninput="ordImportRows[${i}].catalog=this.value">
+      <button class="btn-action danger" aria-label="הסר שורה" onclick="ordImportRows.splice(${i},1);ordImportRender()">✕</button></div>`).join('') + `</div>`;
+}
+window.ordImportRender = ordImportRender;
+window.ordImportConfirm = async function () {
+  const rows = ordImportRows.filter(r => (r.name || '').trim());
+  if (!rows.length) return;
+  const btn = document.getElementById('imp-confirm'); btn.disabled = true;
+  const cat = document.getElementById('imp-cat').value;
+  const sup = document.getElementById('imp-sup').value;
+  const now = Date.now();
+  const ok = await ordRun(() => Promise.all(rows.map((r, k) => {
+    const id = ordNewId('i');
+    return ordSave('items/' + id, { id, name: r.name.trim(), category: cat, qty: r.qty, unit: (r.unit || '').trim(), supplierId: sup, catalog: (r.catalog || '').trim(),
+      link: '', notes: '', status: 'needed', orderId: '', arrivedDate: '', createdAt: now + k });
+  })), `נוספו ${rows.length} פריטים לרשימה`);
+  if (!ok) { btn.disabled = false; return; }
+  closeAllModals();
+  ordersView = 'items'; ordStatusFilter = '';
+  renderOrders();
 };
 
 // ── Init ──
