@@ -121,7 +121,8 @@ a:focus-visible,button:focus-visible,select:focus-visible,input:focus-visible,te
 .link-sm{font-size:12px;color:#1a5fb4;text-decoration:none}
 .link-sm:hover{text-decoration:underline}
 
-.imp-row{display:flex;gap:6px;margin-bottom:6px;align-items:center}
+.imp-row{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px;align-items:center}
+.imp-row select{padding:7px 6px;font-size:13px;width:92px}
 .imp-row input{padding:7px 8px;font-size:13px;min-width:0}
 .imp-head{font-size:12px;color:#707070}
 .imp-box{max-height:42vh;overflow:auto;margin:10px 0}
@@ -436,13 +437,13 @@ a:focus-visible,button:focus-visible,select:focus-visible,input:focus-visible,te
 
 <!-- Orders: import list -->
 <div id="ord-import-modal" class="modal-backdrop" style="display:none" role="dialog" aria-modal="true" aria-labelledby="ord-import-title">
-  <div class="modal" style="max-width:600px">
+  <div class="modal" style="max-width:680px">
     <h2 id="ord-import-title">ייבוא רשימה</h2>
     <p style="font-size:13px;color:#666;margin-bottom:10px">הדביקי רשימה, שורה לכל פריט. אפשר להעתיק ישר מ-Excel או מטבלה (עמודות: שם, כמות, יחידה, מק״ט), או לכתוב בצורה חופשית כמו <span dir="ltr">Ethanol x 3</span>. אם בשורה הראשונה יש כותרות (שם, כמות, יחידה, מק״ט), הן יזוהו אוטומטית.</p>
     <div class="form-group"><label for="imp-text">הרשימה</label><textarea id="imp-text" rows="6" oninput="ordImportParse()"></textarea></div>
     <div style="display:flex;gap:10px">
-      <div class="form-group" style="flex:1"><label for="imp-cat">סוג לכל הפריטים</label>
-        <select id="imp-cat"><option value="consumable">מתכלה</option><option value="chemical">כימיקל</option><option value="equipment">ציוד</option></select></div>
+      <div class="form-group" style="flex:1"><label for="imp-cat">סוג (ברירת מחדל לכולם)</label>
+        <select id="imp-cat" onchange="ordImportSetAllCat()"><option value="consumable">מתכלה</option><option value="chemical">כימיקל</option><option value="equipment">ציוד</option></select></div>
       <div class="form-group" style="flex:1"><label for="imp-sup">ספק לכל הפריטים</label><select id="imp-sup"></select></div>
     </div>
     <div id="imp-preview"></div>
@@ -2007,7 +2008,13 @@ window.openOrdImport = function () {
   document.getElementById('imp-text').focus();
 };
 window.ordImportParse = function () {
-  ordImportRows = impParse(document.getElementById('imp-text').value);
+  const cat = document.getElementById('imp-cat').value;
+  ordImportRows = impParse(document.getElementById('imp-text').value).map(r => Object.assign(r, { cat }));
+  ordImportRender();
+};
+window.ordImportSetAllCat = function () {
+  const cat = document.getElementById('imp-cat').value;
+  ordImportRows.forEach(r => { r.cat = cat; });
   ordImportRender();
 };
 function ordImportRender() {
@@ -2016,10 +2023,11 @@ function ordImportRender() {
   document.getElementById('imp-confirm').textContent = ordImportRows.length ? `הוסף ${ordImportRows.length} פריטים לרשימה` : 'הוסף לרשימה';
   if (!ordImportRows.length) { box.innerHTML = ''; return; }
   box.innerHTML = `<div class="imp-head">תצוגה מקדימה (אפשר לתקן לפני ההוספה)</div><div class="imp-box">` + ordImportRows.map((r, i) => `<div class="imp-row">
-      <input style="flex:3" aria-label="שם" value="${oesc(r.name)}" oninput="ordImportRows[${i}].name=this.value">
+      <input style="flex:3 1 160px" aria-label="שם" value="${oesc(r.name)}" oninput="ordImportRows[${i}].name=this.value">
       <input style="width:64px" type="number" step="any" aria-label="כמות" value="${oesc(r.qty)}" oninput="ordImportRows[${i}].qty=this.value===''?'':Number(this.value)">
       <input style="width:78px" aria-label="יחידה" value="${oesc(r.unit)}" oninput="ordImportRows[${i}].unit=this.value">
-      <input style="flex:2" dir="ltr" aria-label="מק״ט" value="${oesc(r.catalog)}" oninput="ordImportRows[${i}].catalog=this.value">
+      <input style="flex:2 1 90px" dir="ltr" aria-label="מק״ט" value="${oesc(r.catalog)}" oninput="ordImportRows[${i}].catalog=this.value">
+      <select aria-label="סוג" onchange="ordImportRows[${i}].cat=this.value">${Object.entries(ORD_CATS).map(([k, v]) => `<option value="${k}" ${r.cat === k ? 'selected' : ''}>${v}</option>`).join('')}</select>
       <button class="btn-action danger" aria-label="הסר שורה" onclick="ordImportRows.splice(${i},1);ordImportRender()">✕</button></div>`).join('') + `</div>`;
 }
 window.ordImportRender = ordImportRender;
@@ -2027,12 +2035,12 @@ window.ordImportConfirm = async function () {
   const rows = ordImportRows.filter(r => (r.name || '').trim());
   if (!rows.length) return;
   const btn = document.getElementById('imp-confirm'); btn.disabled = true;
-  const cat = document.getElementById('imp-cat').value;
+  const defCat = document.getElementById('imp-cat').value;
   const sup = document.getElementById('imp-sup').value;
   const now = Date.now();
   const ok = await ordRun(() => Promise.all(rows.map((r, k) => {
     const id = ordNewId('i');
-    return ordSave('items/' + id, { id, name: r.name.trim(), category: cat, qty: r.qty, unit: (r.unit || '').trim(), supplierId: sup, catalog: (r.catalog || '').trim(),
+    return ordSave('items/' + id, { id, name: r.name.trim(), category: r.cat || defCat, qty: r.qty, unit: (r.unit || '').trim(), supplierId: sup, catalog: (r.catalog || '').trim(),
       link: '', notes: '', status: 'needed', orderId: '', arrivedDate: '', createdAt: now + k });
   })), `נוספו ${rows.length} פריטים לרשימה`);
   if (!ok) { btn.disabled = false; return; }
