@@ -128,6 +128,10 @@ a:focus-visible,button:focus-visible,select:focus-visible,input:focus-visible,te
 .imp-box{max-height:42vh;overflow:auto;margin:10px 0}
 .btn-row{display:flex;gap:8px;margin:0 0 14px}
 .btn-row .add-btn{margin:0;flex:1}
+.hist-row{border:1px solid #e8e8e5;border-radius:10px;padding:10px;margin-bottom:8px;background:#fafaf8}
+.hist-row .imp-row{margin-bottom:6px}
+.hist-row .imp-row:last-child{margin-bottom:0}
+.hist-row input[type=date]{width:140px}
 </style>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 </head>
@@ -209,6 +213,12 @@ a:focus-visible,button:focus-visible,select:focus-visible,input:focus-visible,te
         <option value="">כל הקבלות</option>
         <option value="no">קבלה לא הועברה</option>
         <option value="yes">קבלה הועברה</option>
+      </select>
+      <label for="ord-f-pay" class="visually-hidden">סינון לפי תשלום</label>
+      <select id="ord-f-pay" onchange="renderOrders()">
+        <option value="">כל התשלומים</option>
+        <option value="no">טרם שולם</option>
+        <option value="yes">שולם</option>
       </select>
     </div>
     <div id="orders-body"></div>
@@ -454,6 +464,22 @@ a:focus-visible,button:focus-visible,select:focus-visible,input:focus-visible,te
   </div>
 </div>
 
+<!-- Orders: import historical orders -->
+<div id="ord-hist-modal" class="modal-backdrop" style="display:none" role="dialog" aria-modal="true" aria-labelledby="ord-hist-title">
+  <div class="modal" style="max-width:760px">
+    <h2 id="ord-hist-title">ייבוא הזמנות קודמות</h2>
+    <p style="font-size:13px;color:#666;margin-bottom:10px">מדביקים טבלה מהמערכת הישנה (העתקה מ-Excel או Google Sheets, כולל שורת כותרות). עמודות שמזוהות: תאריך, ספק, תיאור, מספר הזמנה/חשבונית, מספר קבלה, אמצעי תשלום, תאריך תשלום. כל שורה הופכת להזמנה אחת ללא פירוט פריטים.</p>
+    <div class="form-group"><label for="hist-text">הטבלה</label><textarea id="hist-text" rows="5" oninput="ordHistParse()"></textarea></div>
+    <datalist id="hist-sups"></datalist>
+    <div id="hist-preview"></div>
+    <div id="hist-hint" style="font-size:12px;color:#a55209;margin-top:6px"></div>
+    <div class="modal-btns">
+      <button class="btn-secondary" onclick="closeAllModals()">ביטול</button>
+      <button class="btn-primary" id="hist-confirm" onclick="ordHistConfirm()" disabled>ייבא הזמנות</button>
+    </div>
+  </div>
+</div>
+
 <!-- Orders: supplier modal -->
 <div id="ord-sup-modal" class="modal-backdrop" style="display:none" role="dialog" aria-modal="true" aria-labelledby="ord-sup-title">
   <div class="modal">
@@ -506,6 +532,13 @@ a:focus-visible,button:focus-visible,select:focus-visible,input:focus-visible,te
     <div class="form-group"><label for="oe-ref">מספר הזמנה אצל הספק (אופציונלי)</label><input type="text" id="oe-ref" dir="ltr"></div>
     <div class="form-group checkbox-row"><input type="checkbox" id="oe-rcpt-sent"><label for="oe-rcpt-sent">הקבלה הועברה לחשבונות</label></div>
     <div class="form-group"><label for="oe-rcpt-num">מספר שניתן לקבלה (אופציונלי)</label><input type="text" id="oe-rcpt-num" dir="ltr"></div>
+    <div class="form-group" id="oe-desc-group" style="display:none"><label for="oe-desc">תיאור ההזמנה (הזמנה היסטורית)</label><textarea id="oe-desc" rows="2"></textarea></div>
+    <div class="form-group checkbox-row"><input type="checkbox" id="oe-paid" onchange="ordPayToggle()"><label for="oe-paid">ההזמנה שולמה</label></div>
+    <div style="display:flex;gap:10px">
+      <div class="form-group" style="flex:1"><label for="oe-pay-method">אמצעי תשלום</label>
+        <select id="oe-pay-method"><option value="">—</option><option value="credit">אשראי</option><option value="transfer">דרך חשבון</option><option value="balance">יתרה קיימת</option></select></div>
+      <div class="form-group" style="flex:1"><label for="oe-pay-date">תאריך תשלום</label><input type="date" id="oe-pay-date"></div>
+    </div>
     <div class="form-group"><label for="oe-notes">הערות (אופציונלי)</label><textarea id="oe-notes" rows="2"></textarea></div>
     <div class="modal-btns">
       <button class="btn-secondary" onclick="closeAllModals()">ביטול</button>
@@ -1455,6 +1488,7 @@ let ordCreateGroups = [];
 let editingOrdItemId = null, editingOrdSupplierId = null, editingOrdOrderId = null;
 const ORD_CATS = { equipment: 'ציוד', chemical: 'כימיקל', consumable: 'מתכלה' };
 const ORD_SUP_TYPES = { regular: 'ספק קבוע', aliexpress: 'אליאקספרס', other: 'אחר' };
+const ORD_PAY = { credit: 'אשראי', transfer: 'דרך חשבון', balance: 'יתרה קיימת' };
 const ORD_STATUS = { needed: 'נדרש', ordered: 'הוזמן', arrived: 'הגיע' };
 
 function oesc(s) {
@@ -1510,6 +1544,7 @@ function renderOrders() {
   document.getElementById('orders-filters').style.display = ordersView === 'suppliers' ? 'none' : 'flex';
   document.getElementById('ord-f-cat').style.display = ordersView === 'items' ? '' : 'none';
   document.getElementById('ord-f-rcpt').style.display = ordersView === 'orders' ? '' : 'none';
+  document.getElementById('ord-f-pay').style.display = ordersView === 'orders' ? '' : 'none';
   const supSel = document.getElementById('ord-f-sup');
   const cur = supSel.value;
   supSel.innerHTML = ordSupOptions(cur, 'כל הספקים');
@@ -1583,6 +1618,7 @@ function ordItemsHtml() {
 }
 
 function ordOrderStatus(o) {
+  if (o.historical) return { label: 'התקבלה (היסטורית)', cls: 'badge-done', items: [], arrived: 0 };
   const items = ordOrderItems(o.id);
   const arrived = items.filter(i => i.status === 'arrived').length;
   if (!items.length) return { label: 'ריקה', cls: 'badge-general', items, arrived };
@@ -1596,22 +1632,26 @@ function ordOrdersHtml() {
   const cat = document.getElementById('ord-f-cat').value;
   const supF = document.getElementById('ord-f-sup').value;
   const rcptF = document.getElementById('ord-f-rcpt').value;
+  const payF = document.getElementById('ord-f-pay').value;
+  const TOP = `<div class="btn-row"><button class="add-btn" onclick="openOrdHist()">📥 ייבוא הזמנות קודמות</button></div>`;
   const orders = Object.values(ordersData.orders).sort((a, b) => (b.number || 0) - (a.number || 0)).filter(o => {
     const st = ordOrderStatus(o);
     const sup = ordersData.suppliers[o.supplierId];
     if (supF && o.supplierId !== supF) return false;
     if (rcptF === 'no' && o.receiptSent) return false;
     if (rcptF === 'yes' && !o.receiptSent) return false;
+    if (payF === 'no' && o.paid) return false;
+    if (payF === 'yes' && !o.paid) return false;
     if (q) {
-      const hay = ['#' + o.number, sup && sup.name, o.supplierRef, o.receiptNumber, o.notes, ...st.items.map(i => i.name + ' ' + (i.catalog || ''))].join(' ').toLowerCase();
+      const hay = ['#' + o.number, sup && sup.name, o.supplierRef, o.receiptNumber, o.description, o.notes, ...st.items.map(i => i.name + ' ' + (i.catalog || ''))].join(' ').toLowerCase();
       if (!hay.includes(q)) return false;
     }
     return true;
   });
   if (!Object.keys(ordersData.orders).length)
-    return `<div class="empty"><div class="empty-icon">📦</div>עדיין אין הזמנות. סמני פריטים ברשימה ולחצי ״צור הזמנות״.</div>`;
-  if (!orders.length) return `<div class="empty">אין הזמנות שתואמות לחיפוש</div>`;
-  return orders.map(o => {
+    return TOP + `<div class="empty"><div class="empty-icon">📦</div>עדיין אין הזמנות. סמני פריטים ברשימה ולחצי ״צור הזמנות״.</div>`;
+  if (!orders.length) return TOP + `<div class="empty">אין הזמנות שתואמות לחיפוש</div>`;
+  return TOP + orders.map(o => {
     const st = ordOrderStatus(o);
     const sup = ordersData.suppliers[o.supplierId];
     const lines = st.items.map(i => `<div class="order-line">
@@ -1630,13 +1670,15 @@ function ordOrdersHtml() {
         <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px">
           <span class="badge ${st.cls}">${st.label}</span>
           <span class="badge ${o.receiptSent ? 'badge-done' : 'badge-needed'}">${o.receiptSent ? 'קבלה הועברה' + (o.receiptNumber ? ' · ' + oesc(o.receiptNumber) : '') : 'קבלה לא הועברה'}</span>
+          <span class="badge ${o.paid ? 'badge-done' : 'badge-needed'}">${o.paid ? 'שולם' + (ORD_PAY[o.paymentMethod] ? ' · ' + ORD_PAY[o.paymentMethod] : '') + (o.paymentDate ? ' · ' + ordFmt(o.paymentDate) : '') : 'טרם שולם'}</span>
         </div>
       </div>
       ${o.notes ? `<div class="task-instructions" style="margin:0 0 6px">${oesc(o.notes)}</div>` : ''}
-      ${lines}
+      ${o.historical ? `<div class="order-line"><div>${oesc(o.description || 'ללא תיאור')}</div><span class="badge badge-general">ללא פירוט פריטים</span></div>` : lines}
       <div class="order-actions">
         ${st.items.length && st.arrived < st.items.length ? `<button class="btn-action" onclick="ordMarkOrderArrived('${o.id}')">✓ סמן את כל ההזמנה כהגיעה</button>` : ''}
         ${o.receiptSent ? '' : `<button class="btn-action" onclick="ordMarkReceiptSent('${o.id}')">📄 סמן קבלה כהועברה</button>`}
+        ${o.paid ? '' : `<button class="btn-action" onclick="openOrdEdit('${o.id}',true)">💳 סמן כשולם</button>`}
         <button class="btn-action muted" onclick="openOrdEdit('${o.id}')">עריכת פרטים</button>
         <button class="btn-action danger" onclick="ordDeleteOrder('${o.id}')">מחיקת הזמנה</button>
       </div>
@@ -1853,7 +1895,7 @@ window.confirmAddToOrder = async function () {
 };
 
 // ── Edit order details ──
-window.openOrdEdit = function (id) {
+window.openOrdEdit = function (id, payNow) {
   const o = ordersData.orders[id]; if (!o) return;
   lastFocusedEl = document.activeElement;
   editingOrdOrderId = id;
@@ -1864,6 +1906,11 @@ window.openOrdEdit = function (id) {
   document.getElementById('oe-notes').value = o.notes || '';
   document.getElementById('oe-rcpt-sent').checked = !!o.receiptSent;
   document.getElementById('oe-rcpt-num').value = o.receiptNumber || '';
+  document.getElementById('oe-paid').checked = !!o.paid || !!payNow;
+  document.getElementById('oe-pay-method').value = o.paymentMethod || '';
+  document.getElementById('oe-pay-date').value = o.paymentDate || (payNow ? ordToday() : '');
+  document.getElementById('oe-desc-group').style.display = o.historical ? '' : 'none';
+  document.getElementById('oe-desc').value = o.description || '';
   document.getElementById('ord-edit-modal').style.display = 'flex';
 };
 window.saveOrdEdit = async function () {
@@ -1873,6 +1920,10 @@ window.saveOrdEdit = async function () {
     supplierRef: document.getElementById('oe-ref').value.trim(),
     receiptSent: document.getElementById('oe-rcpt-sent').checked,
     receiptNumber: document.getElementById('oe-rcpt-num').value.trim(),
+    paid: document.getElementById('oe-paid').checked,
+    paymentMethod: document.getElementById('oe-paid').checked ? document.getElementById('oe-pay-method').value : '',
+    paymentDate: document.getElementById('oe-paid').checked ? document.getElementById('oe-pay-date').value : '',
+    description: o.historical ? document.getElementById('oe-desc').value.trim() : (o.description || ''),
     notes: document.getElementById('oe-notes').value.trim()
   });
   if (await ordRun(() => ordSave('orders/' + o.id, upd), 'נשמר')) closeAllModals();
@@ -1916,13 +1967,15 @@ window.ordExport = function () {
     return { 'פריט': i.name, 'סוג': ORD_CATS[i.category] || '', 'כמות': i.qty, 'יחידה': i.unit, 'מק״ט': i.catalog, 'ספק': supName(i.supplierId),
       'סטטוס': ORD_STATUS[i.status] || '', 'מספר הזמנה': o.number || '', 'מס׳ הזמנה אצל הספק': o.supplierRef || '',
       'קבלה הועברה': o.receiptSent ? 'כן' : 'לא', 'מס׳ קבלה': o.receiptNumber || '',
+      'שולם': o.paid ? 'כן' : 'לא', 'אמצעי תשלום': ORD_PAY[o.paymentMethod] || '', 'תאריך תשלום': o.paymentDate || '',
       'תאריך הזמנה': o.date || '', 'תאריך הגעה': i.arrivedDate || '', 'קישור': i.link, 'הערות': i.notes };
   });
   const orderRows = Object.values(ordersData.orders).sort((a, b) => a.number - b.number).map(o => {
     const st = ordOrderStatus(o);
     return { 'מספר הזמנה': o.number, 'ספק': supName(o.supplierId), 'תאריך': o.date, 'מס׳ הזמנה אצל הספק': o.supplierRef, 'סטטוס': st.label,
       'קבלה הועברה': o.receiptSent ? 'כן' : 'לא', 'מס׳ קבלה': o.receiptNumber || '',
-      'פריטים': st.items.map(i => `${i.name} (${i.qty} ${i.unit})`).join('; '), 'הערות': o.notes };
+      'שולם': o.paid ? 'כן' : 'לא', 'אמצעי תשלום': ORD_PAY[o.paymentMethod] || '', 'תאריך תשלום': o.paymentDate || '',
+      'פריטים': o.historical ? (o.description || '') : st.items.map(i => `${i.name} (${i.qty} ${i.unit})`).join('; '), 'הערות': o.notes };
   });
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(itemsRows), 'פריטים');
@@ -2046,6 +2099,156 @@ window.ordImportConfirm = async function () {
   if (!ok) { btn.disabled = false; return; }
   closeAllModals();
   ordersView = 'items'; ordStatusFilter = '';
+  renderOrders();
+};
+
+// ── Payment toggle & historical import ──
+window.ordPayToggle = function () {
+  if (document.getElementById('oe-paid').checked && !document.getElementById('oe-pay-date').value)
+    document.getElementById('oe-pay-date').value = ordToday();
+};
+const HIST_HEADERS = {
+  date: ['תאריך', 'תאריך הזמנה', 'תאריך חשבונית', 'date', 'order date'],
+  supplier: ['ספק', 'שם ספק', 'supplier', 'vendor'],
+  desc: ['תיאור', 'פירוט', 'תיאור הזמנה', 'פריטים', 'description', 'items', 'details'],
+  ref: ['מספר הזמנה', 'מס הזמנה', 'מספר חשבונית', 'חשבונית', 'הזמנה', 'order', 'order no', 'order number', 'invoice', 'invoice no'],
+  receipt: ['מספר קבלה', 'מס קבלה', 'קבלה', 'receipt', 'receipt no', 'receipt number'],
+  method: ['אמצעי תשלום', 'אופן תשלום', 'תשלום', 'שולם ב', 'payment', 'payment method', 'method'],
+  payDate: ['תאריך תשלום', 'תאריך חיוב', 'payment date', 'paid on', 'paid date']
+};
+const HIST_DEFAULT = { date: 0, supplier: 1, desc: 2, ref: 3, receipt: 4, method: 5, payDate: 6 };
+let ordHistRows = [];
+function histNorm(x) { return String(x || '').toLowerCase().replace(/[׳'"״`.:]/g, '').replace(/\s+/g, ' ').trim(); }
+function histCsv(line) {
+  const out = []; let cur = '', q = false;
+  for (let i = 0; i < line.length; i++) {
+    const c = line[i];
+    if (q) { if (c === '"' && line[i + 1] === '"') { cur += '"'; i++; } else if (c === '"') q = false; else cur += c; }
+    else if (c === '"') q = true; else if (c === ',') { out.push(cur.trim()); cur = ''; } else cur += c;
+  }
+  out.push(cur.trim()); return out;
+}
+function histSplit(line) {
+  if (line.includes('\t')) return line.split('\t').map(x => x.trim());
+  if (line.includes(';')) return line.split(';').map(x => x.trim());
+  if ((line.match(/,/g) || []).length >= 2) return histCsv(line);
+  return [line];
+}
+function histDate(v) {
+  v = String(v || '').trim();
+  let m = v.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  let y, mo, d;
+  if (m) { y = +m[1]; mo = +m[2]; d = +m[3]; }
+  else {
+    m = v.match(/^(\d{1,2})[\/.\-](\d{1,2})[\/.\-](\d{2,4})$/);
+    if (!m) return '';
+    d = +m[1]; mo = +m[2]; y = +m[3]; if (y < 100) y += 2000;
+  }
+  if (mo < 1 || mo > 12 || d < 1 || d > 31) return '';
+  return `${y}-${String(mo).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+}
+function histMethod(v) {
+  v = String(v || '').toLowerCase();
+  if (/יתרה|זיכוי|קרדיט|balance|store credit/.test(v)) return 'balance';
+  if (/אשראי|כרטיס|credit|card|visa|ויזה|מאסטר|master|ישראכרט|isracard|כאל|amex/.test(v)) return 'credit';
+  if (/העברה|בנק|transfer|wire|bank|הוראת/.test(v)) return 'transfer';
+  return '';
+}
+function histParse(text) {
+  const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+  let map = HIST_DEFAULT;
+  if (lines.length) {
+    const first = histSplit(lines[0]);
+    const found = {};
+    first.forEach((c, idx) => {
+      const k = histNorm(c);
+      for (const f in HIST_HEADERS) if (found[f] === undefined && HIST_HEADERS[f].some(h => histNorm(h) === k)) { found[f] = idx; break; }
+    });
+    if (Object.keys(found).length >= 2 && (found.date !== undefined || found.supplier !== undefined)) { map = found; lines.shift(); }
+  }
+  return lines.map(line => {
+    const cols = histSplit(line);
+    const g = f => (map[f] !== undefined && cols[map[f]] !== undefined ? cols[map[f]] : '');
+    const method = histMethod(g('method'));
+    return { date: histDate(g('date')), supplier: g('supplier'), desc: g('desc'), ref: g('ref'), receipt: g('receipt'),
+      method, payDate: histDate(g('payDate')) };
+  }).filter(r => r.date || r.supplier || r.desc || r.ref || r.receipt);
+}
+window.openOrdHist = function () {
+  lastFocusedEl = document.activeElement;
+  document.getElementById('hist-text').value = '';
+  document.getElementById('hist-sups').innerHTML = ordSuppliersSorted().map(s => `<option value="${oesc(s.name)}">`).join('');
+  ordHistRows = [];
+  ordHistRender();
+  document.getElementById('ord-hist-modal').style.display = 'flex';
+  document.getElementById('hist-text').focus();
+};
+window.ordHistParse = function () { ordHistRows = histParse(document.getElementById('hist-text').value); ordHistRender(); };
+function ordHistHint() {
+  const known = new Set(ordSuppliersSorted().map(s => s.name.trim().toLowerCase()));
+  const fresh = [...new Set(ordHistRows.map(r => (r.supplier || '').trim()).filter(n => n && !known.has(n.toLowerCase())))];
+  const noDate = ordHistRows.filter(r => !r.date).length;
+  const el = document.getElementById('hist-hint');
+  el.textContent = [fresh.length ? `ספקים חדשים שייווצרו: ${fresh.join(', ')}` : '', noDate ? `${noDate} שורות ללא תאריך תקין, יש להשלים לפני הייבוא` : ''].filter(Boolean).join(' · ');
+}
+function ordHistRender() {
+  const box = document.getElementById('hist-preview');
+  const btn = document.getElementById('hist-confirm');
+  btn.disabled = !ordHistRows.length;
+  btn.textContent = ordHistRows.length ? `ייבא ${ordHistRows.length} הזמנות` : 'ייבא הזמנות';
+  if (!ordHistRows.length) { box.innerHTML = ''; ordHistHint(); return; }
+  box.innerHTML = `<div class="imp-head">תצוגה מקדימה (אפשר לתקן לפני הייבוא)</div><div class="imp-box" style="max-height:38vh">` + ordHistRows.map((r, i) => `<div class="hist-row">
+      <div class="imp-row"><input type="date" aria-label="תאריך" value="${oesc(r.date)}" onchange="ordHistRows[${i}].date=this.value;ordHistHint()">
+        <input style="flex:2 1 140px" list="hist-sups" aria-label="ספק" value="${oesc(r.supplier)}" placeholder="ספק" oninput="ordHistRows[${i}].supplier=this.value;ordHistHint()">
+        <input style="flex:1 1 110px" dir="ltr" aria-label="מספר הזמנה" value="${oesc(r.ref)}" placeholder="מס׳ הזמנה" oninput="ordHistRows[${i}].ref=this.value">
+        <button class="btn-action danger" aria-label="הסר שורה" onclick="ordHistRows.splice(${i},1);ordHistRender()">✕</button></div>
+      <div class="imp-row"><input style="flex:1 1 100%" aria-label="תיאור" value="${oesc(r.desc)}" placeholder="תיאור" oninput="ordHistRows[${i}].desc=this.value"></div>
+      <div class="imp-row"><input style="flex:1 1 110px" dir="ltr" aria-label="מספר קבלה" value="${oesc(r.receipt)}" placeholder="מס׳ קבלה" oninput="ordHistRows[${i}].receipt=this.value">
+        <select aria-label="אמצעי תשלום" style="width:130px" onchange="ordHistRows[${i}].method=this.value"><option value="">לא שולם / לא ידוע</option>
+          <option value="credit" ${r.method === 'credit' ? 'selected' : ''}>אשראי</option><option value="transfer" ${r.method === 'transfer' ? 'selected' : ''}>דרך חשבון</option><option value="balance" ${r.method === 'balance' ? 'selected' : ''}>יתרה קיימת</option></select>
+        <input type="date" aria-label="תאריך תשלום" value="${oesc(r.payDate)}" onchange="ordHistRows[${i}].payDate=this.value"></div>
+    </div>`).join('') + `</div>`;
+  ordHistHint();
+}
+window.ordHistRender = ordHistRender; window.ordHistHint = ordHistHint;
+window.ordHistConfirm = async function () {
+  const rows = ordHistRows.filter(r => r.date || (r.supplier || '').trim() || r.desc || r.ref || r.receipt);
+  if (!rows.length) return;
+  if (rows.some(r => !/^\d{4}-\d{2}-\d{2}$/.test(r.date))) { showToast('יש להשלים תאריך תקין בכל השורות'); return; }
+  if (rows.some(r => !(r.supplier || '').trim())) { showToast('יש להשלים ספק בכל השורות'); return; }
+  const btn = document.getElementById('hist-confirm'); btn.disabled = true;
+  const sups = {};
+  ordSuppliersSorted().forEach(s => { sups[s.name.trim().toLowerCase()] = s; });
+  const newSups = [];
+  const supFor = name => {
+    const k = name.trim().toLowerCase();
+    if (!sups[k]) { const s = { id: ordNewId('s'), name: name.trim(), type: /ali/i.test(name) ? 'aliexpress' : 'regular', site: '', notes: '' }; sups[k] = s; newSups.push(s); }
+    return sups[k];
+  };
+  const existing = Object.values(ordersData.orders);
+  const sig = o => [o.date, o.supplierId, (o.supplierRef || '').trim(), (o.receiptNumber || '').trim(), (o.description || '').trim()].join('|');
+  const seen = new Set(existing.map(sig));
+  const sorted = rows.map((r, k) => ({ r, k })).sort((a, b) => a.r.date.localeCompare(b.r.date) || a.k - b.k).map(x => x.r);
+  let num = existing.reduce((mx, o) => Math.max(mx, o.number || 0), 0) + 1;
+  const now = Date.now(); const orders = []; let skipped = 0;
+  sorted.forEach((r, k) => {
+    const sup = supFor(r.supplier);
+    const o = { id: ordNewId('o'), number: 0, supplierId: sup.id, date: r.date, supplierRef: (r.ref || '').trim(), notes: '', description: (r.desc || '').trim(),
+      historical: true, receiptSent: !!(r.receipt || '').trim(), receiptNumber: (r.receipt || '').trim(),
+      paid: !!(r.method || r.payDate), paymentMethod: r.method || '', paymentDate: r.payDate || '', createdAt: now + k };
+    const sg = sig(o);
+    if (seen.has(sg)) { skipped++; return; }
+    seen.add(sg); o.number = num++; orders.push(o);
+  });
+  if (!orders.length) { btn.disabled = false; showToast('כל השורות כבר קיימות במערכת'); return; }
+  const usedSup = new Set(orders.map(o => o.supplierId));
+  const ok = await ordRun(() => Promise.all([
+    ...newSups.filter(s => usedSup.has(s.id)).map(s => ordSave('suppliers/' + s.id, s)),
+    ...orders.map(o => ordSave('orders/' + o.id, o))
+  ]), `יובאו ${orders.length} הזמנות` + (skipped ? ` (${skipped} כפולות דולגו)` : ''));
+  if (!ok) { btn.disabled = false; return; }
+  closeAllModals();
+  ordersView = 'orders';
   renderOrders();
 };
 
