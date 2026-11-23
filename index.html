@@ -464,10 +464,27 @@ a:focus-visible,button:focus-visible,select:focus-visible,input:focus-visible,te
   </div>
 </div>
 
+<!-- Orders: add an order from a receipt -->
+<div id="ord-rcpt-modal" class="modal-backdrop" style="display:none" role="dialog" aria-modal="true" aria-labelledby="ord-rcpt-title">
+  <div class="modal" style="max-width:760px">
+    <h2 id="ord-rcpt-title">הוספת הזמנה מקבלה</h2>
+    <p style="font-size:13px;color:#666;margin-bottom:10px">שלחי ל-Claude בשיחה תמונה של הקבלה או החשבונית, והדביקי כאן את הטקסט שהוא מחזיר. ההזמנה תיווצר עם כל הפריטים, כבר בסטטוס "הגיע".</p>
+    <div class="form-group"><label for="rc-text">הטקסט מהקבלה</label><textarea id="rc-text" rows="5" oninput="ordRcptParse()"></textarea></div>
+    <datalist id="rc-sups"></datalist>
+    <div id="rc-preview"></div>
+    <div id="rc-hint" style="font-size:12px;color:#a55209;margin-top:6px"></div>
+    <div style="display:flex;align-items:center;gap:8px;margin-top:12px"><input type="checkbox" id="rc-sent" checked style="width:auto;margin:0"><label for="rc-sent" style="margin:0;font-size:14px">הקבלה כבר הועברה לחשבונות</label></div>
+    <div class="modal-btns">
+      <button class="btn-secondary" onclick="closeAllModals()">ביטול</button>
+      <button class="btn-primary" id="rc-confirm" onclick="ordRcptConfirm()" disabled>צור הזמנה</button>
+    </div>
+  </div>
+</div>
+
 <!-- Orders: import historical orders -->
 <div id="ord-hist-modal" class="modal-backdrop" style="display:none" role="dialog" aria-modal="true" aria-labelledby="ord-hist-title">
   <div class="modal" style="max-width:760px">
-    <h2 id="ord-hist-title">ייבוא הזמנות קודמות</h2>
+    <h2 id="ord-hist-title">ייבוא טבלה (הזמנות בלי פירוט פריטים)</h2>
     <p style="font-size:13px;color:#666;margin-bottom:10px">מדביקים טבלה מהמערכת הישנה (העתקה מ-Excel או Google Sheets, כולל שורת כותרות). עמודות שמזוהות: תאריך, ספק, תיאור, מספר הזמנה/חשבונית, מספר קבלה, אמצעי תשלום, תאריך תשלום. כל שורה הופכת להזמנה אחת ללא פירוט פריטים.</p>
     <div class="form-group"><label for="hist-text">הטבלה</label><textarea id="hist-text" rows="5" oninput="ordHistParse()"></textarea></div>
     <datalist id="hist-sups"></datalist>
@@ -1633,7 +1650,7 @@ function ordOrdersHtml() {
   const supF = document.getElementById('ord-f-sup').value;
   const rcptF = document.getElementById('ord-f-rcpt').value;
   const payF = document.getElementById('ord-f-pay').value;
-  const TOP = `<div class="btn-row"><button class="add-btn" onclick="openOrdHist()">📥 ייבוא הזמנות קודמות</button></div>`;
+  const TOP = `<div class="btn-row"><button class="add-btn" onclick="openOrdRcpt()">🧾 הוספת הזמנה מקבלה</button><button class="add-btn" onclick="openOrdHist()">📥 ייבוא טבלה</button></div>`;
   const orders = Object.values(ordersData.orders).sort((a, b) => (b.number || 0) - (a.number || 0)).filter(o => {
     const st = ordOrderStatus(o);
     const sup = ordersData.suppliers[o.supplierId];
@@ -2099,6 +2116,128 @@ window.ordImportConfirm = async function () {
   if (!ok) { btn.disabled = false; return; }
   closeAllModals();
   ordersView = 'items'; ordStatusFilter = '';
+  renderOrders();
+};
+
+// ── Add an order from a receipt (text produced from a receipt photo) ──
+const RC_KEYS = {
+  supplier: ['ספק', 'supplier'],
+  date: ['תאריך', 'date'],
+  ref: ['חשבונית', 'מספר חשבונית', 'הזמנה', 'מספר הזמנה', 'invoice', 'order'],
+  receipt: ['קבלה', 'מספר קבלה', 'receipt'],
+  method: ['תשלום', 'אמצעי תשלום', 'payment'],
+  payDate: ['תאריך תשלום', 'payment date'],
+  notes: ['הערות', 'notes']
+};
+let ordRc = null;
+function rcCat(v) {
+  v = String(v || '').toLowerCase();
+  if (/כימיקל|chem/.test(v)) return 'chemical';
+  if (/ציוד|equip/.test(v)) return 'equipment';
+  return 'consumable';
+}
+function rcParse(text) {
+  const head = { supplier: '', date: '', ref: '', receipt: '', method: '', payDate: '', notes: '' };
+  const items = []; let inItems = false;
+  for (const raw of text.split(/\r?\n/)) {
+    const line = raw.trim(); if (!line) continue;
+    if (/^-{3,}$/.test(line)) { inItems = true; continue; }
+    if (!inItems) {
+      const m = line.match(/^([^:：]+)[:：]\s*(.*)$/);
+      if (m) { const k = histNorm(m[1]); for (const f in RC_KEYS) if (RC_KEYS[f].some(h => histNorm(h) === k)) { head[f] = m[2].trim(); break; } }
+      continue;
+    }
+    const cols = (line.includes('\t') ? line.split('\t') : line.includes('|') ? line.split('|') : line.split(';')).map(x => x.trim());
+    if (!cols[0]) continue;
+    const q = parseFloat(String(cols[1] || '').replace(',', '.'));
+    items.push({ name: cols[0], qty: isNaN(q) ? 1 : q, unit: cols[2] || '', catalog: cols[3] || '', cat: rcCat(cols[4]) });
+  }
+  return {
+    date: histDate(head.date), supplier: head.supplier, ref: head.ref, receipt: head.receipt,
+    method: histMethod(head.method), payDate: histDate(head.payDate), notes: head.notes, items
+  };
+}
+window.openOrdRcpt = function () {
+  lastFocusedEl = document.activeElement;
+  document.getElementById('rc-text').value = '';
+  document.getElementById('rc-sent').checked = true;
+  document.getElementById('rc-sups').innerHTML = ordSuppliersSorted().map(s => `<option value="${oesc(s.name)}">`).join('');
+  ordRc = null; ordRcptRender();
+  document.getElementById('ord-rcpt-modal').style.display = 'flex';
+  document.getElementById('rc-text').focus();
+};
+window.ordRcptParse = function () {
+  const t = document.getElementById('rc-text').value;
+  ordRc = t.trim() ? rcParse(t) : null;
+  ordRcptRender();
+};
+function ordRcptHint() {
+  const el = document.getElementById('rc-hint');
+  if (!ordRc) { el.textContent = ''; return; }
+  const known = new Set(ordSuppliersSorted().map(s => s.name.trim().toLowerCase()));
+  const sup = (ordRc.supplier || '').trim();
+  const msgs = [];
+  if (sup && !known.has(sup.toLowerCase())) msgs.push(`ספק חדש שייווצר: ${sup}`);
+  if (!ordRc.items.length) msgs.push('לא זוהו פריטים. יש לוודא שהטקסט כולל שורת ״---״ ואחריה שורה לכל פריט');
+  el.textContent = msgs.join(' · ');
+}
+function ordRcptRender() {
+  const box = document.getElementById('rc-preview');
+  const btn = document.getElementById('rc-confirm');
+  btn.disabled = !(ordRc && ordRc.items.length);
+  btn.textContent = ordRc && ordRc.items.length ? `צור הזמנה עם ${ordRc.items.length} פריטים` : 'צור הזמנה';
+  if (!ordRc) { box.innerHTML = ''; ordRcptHint(); return; }
+  const r = ordRc;
+  const methodSel = `<select aria-label="אמצעי תשלום" style="width:150px" onchange="ordRc.method=this.value"><option value="">לא שולם / לא ידוע</option>` +
+    Object.entries(ORD_PAY).map(([k, v]) => `<option value="${k}" ${r.method === k ? 'selected' : ''}>${v}</option>`).join('') + `</select>`;
+  box.innerHTML = `<div class="imp-head">תצוגה מקדימה (אפשר לתקן לפני היצירה)</div>
+    <div class="hist-row" style="margin-top:6px">
+      <div class="imp-row"><input type="date" aria-label="תאריך" value="${oesc(r.date)}" onchange="ordRc.date=this.value">
+        <input style="flex:2 1 140px" list="rc-sups" aria-label="ספק" placeholder="ספק" value="${oesc(r.supplier)}" oninput="ordRc.supplier=this.value;ordRcptHint()">
+        <input style="flex:1 1 130px" dir="ltr" aria-label="מספר חשבונית" placeholder="מס׳ חשבונית/הזמנה" value="${oesc(r.ref)}" oninput="ordRc.ref=this.value"></div>
+      <div class="imp-row"><input style="flex:1 1 120px" dir="ltr" aria-label="מספר קבלה" placeholder="מס׳ קבלה" value="${oesc(r.receipt)}" oninput="ordRc.receipt=this.value">
+        ${methodSel}<input type="date" aria-label="תאריך תשלום" value="${oesc(r.payDate)}" onchange="ordRc.payDate=this.value"></div>
+      <div class="imp-row"><input style="flex:1 1 100%" aria-label="הערות" placeholder="הערות" value="${oesc(r.notes)}" oninput="ordRc.notes=this.value"></div>
+    </div>
+    <div class="imp-box" style="max-height:34vh">` + r.items.map((i, k) => `<div class="imp-row">
+      <input style="flex:3 1 170px" aria-label="שם" value="${oesc(i.name)}" oninput="ordRc.items[${k}].name=this.value">
+      <input style="width:60px" type="number" step="any" aria-label="כמות" value="${oesc(i.qty)}" oninput="ordRc.items[${k}].qty=this.value===''?'':Number(this.value)">
+      <input style="width:78px" aria-label="יחידה" value="${oesc(i.unit)}" oninput="ordRc.items[${k}].unit=this.value">
+      <input style="flex:2 1 100px" dir="ltr" aria-label="מק״ט" value="${oesc(i.catalog)}" oninput="ordRc.items[${k}].catalog=this.value">
+      <select aria-label="סוג" onchange="ordRc.items[${k}].cat=this.value">${Object.entries(ORD_CATS).map(([c, v]) => `<option value="${c}" ${i.cat === c ? 'selected' : ''}>${v}</option>`).join('')}</select>
+      <button class="btn-action danger" aria-label="הסר שורה" onclick="ordRc.items.splice(${k},1);ordRcptRender()">✕</button></div>`).join('') + `</div>`;
+  ordRcptHint();
+}
+window.ordRcptRender = ordRcptRender; window.ordRcptHint = ordRcptHint;
+window.ordRcptConfirm = async function () {
+  const r = ordRc; if (!r) return;
+  const items = r.items.filter(i => (i.name || '').trim());
+  if (!items.length) { showToast('אין פריטים ליצירה'); return; }
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(r.date)) { showToast('יש להשלים תאריך תקין'); return; }
+  if (!(r.supplier || '').trim()) { showToast('יש להשלים שם ספק'); return; }
+  const key = r.supplier.trim().toLowerCase();
+  let sup = ordSuppliersSorted().find(s => s.name.trim().toLowerCase() === key);
+  const newSup = !sup;
+  if (newSup) sup = { id: ordNewId('s'), name: r.supplier.trim(), type: /ali/i.test(r.supplier) ? 'aliexpress' : 'regular', site: '', notes: '' };
+  const names = arr => arr.map(i => (i.name || '').trim().toLowerCase()).sort().join('~');
+  const sig = [r.date, sup.id, (r.ref || '').trim(), names(items)].join('|');
+  const dup = Object.values(ordersData.orders).some(o => [o.date, o.supplierId, (o.supplierRef || '').trim(), names(ordOrderItems(o.id))].join('|') === sig);
+  if (dup) { showToast('הזמנה זהה כבר קיימת במערכת'); return; }
+  const btn = document.getElementById('rc-confirm'); btn.disabled = true;
+  const number = Object.values(ordersData.orders).reduce((mx, o) => Math.max(mx, o.number || 0), 0) + 1;
+  const oid = ordNewId('o'); const now = Date.now();
+  const order = { id: oid, number, supplierId: sup.id, date: r.date, supplierRef: (r.ref || '').trim(), notes: (r.notes || '').trim(),
+    receiptSent: document.getElementById('rc-sent').checked, receiptNumber: (r.receipt || '').trim(),
+    paid: !!(r.method || r.payDate), paymentMethod: r.method || '', paymentDate: r.payDate || '', createdAt: now };
+  const ok = await ordRun(() => Promise.all([
+    ...(newSup ? [ordSave('suppliers/' + sup.id, sup)] : []),
+    ordSave('orders/' + oid, order),
+    ...items.map((i, k) => { const id = ordNewId('i'); return ordSave('items/' + id, { id, name: i.name.trim(), category: i.cat || 'consumable', qty: i.qty, unit: (i.unit || '').trim(),
+      supplierId: sup.id, catalog: (i.catalog || '').trim(), link: '', notes: '', status: 'arrived', orderId: oid, arrivedDate: r.date, createdAt: now + k }); })
+  ]), `נוצרה הזמנה #${number} עם ${items.length} פריטים`);
+  if (!ok) { btn.disabled = false; return; }
+  closeAllModals();
+  ordersView = 'orders';
   renderOrders();
 };
 
