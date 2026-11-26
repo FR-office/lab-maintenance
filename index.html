@@ -205,6 +205,7 @@ a:focus-visible,button:focus-visible,select:focus-visible,input:focus-visible,te
         <option value="equipment">ציוד</option>
         <option value="chemical">כימיקלים</option>
         <option value="consumable">מתכלים</option>
+        <option value="service">שירותים</option>
       </select>
       <label for="ord-f-sup" class="visually-hidden">סינון לפי ספק</label>
       <select id="ord-f-sup" onchange="renderOrders()"><option value="">כל הספקים</option></select>
@@ -427,7 +428,7 @@ a:focus-visible,button:focus-visible,select:focus-visible,input:focus-visible,te
     <h2 id="ord-item-title">פריט להזמנה</h2>
     <div class="form-group"><label for="oi-name">שם הפריט</label><input type="text" id="oi-name" list="oi-names" autocomplete="off" oninput="ordAutofill()" placeholder="לדוג׳: קצוות פיפטה 200µl"><datalist id="oi-names"></datalist></div>
     <div class="form-group"><label for="oi-cat">סוג</label>
-      <select id="oi-cat"><option value="consumable">מתכלה</option><option value="chemical">כימיקל</option><option value="equipment">ציוד</option></select></div>
+      <select id="oi-cat"><option value="consumable">מתכלה</option><option value="chemical">כימיקל</option><option value="equipment">ציוד</option><option value="service">שירות</option></select></div>
     <div style="display:flex;gap:10px">
       <div class="form-group" style="flex:1"><label for="oi-qty">כמות</label><input type="number" id="oi-qty" min="0" step="any" value="1"></div>
       <div class="form-group" style="flex:1"><label for="oi-unit">יחידה</label><input type="text" id="oi-unit" placeholder="יח׳ / חבילה / ליטר"></div>
@@ -453,7 +454,7 @@ a:focus-visible,button:focus-visible,select:focus-visible,input:focus-visible,te
     <div class="form-group"><label for="imp-text">הרשימה</label><textarea id="imp-text" rows="6" oninput="ordImportParse()"></textarea></div>
     <div style="display:flex;gap:10px">
       <div class="form-group" style="flex:1"><label for="imp-cat">סוג (ברירת מחדל לכולם)</label>
-        <select id="imp-cat" onchange="ordImportSetAllCat()"><option value="consumable">מתכלה</option><option value="chemical">כימיקל</option><option value="equipment">ציוד</option></select></div>
+        <select id="imp-cat" onchange="ordImportSetAllCat()"><option value="consumable">מתכלה</option><option value="chemical">כימיקל</option><option value="equipment">ציוד</option><option value="service">שירות</option></select></div>
       <div class="form-group" style="flex:1"><label for="imp-sup">ספק לכל הפריטים</label><select id="imp-sup"></select></div>
     </div>
     <div id="imp-preview"></div>
@@ -1507,7 +1508,7 @@ let ordStatusFilter = '';
 let ordSelected = new Set();
 let ordCreateGroups = [];
 let editingOrdItemId = null, editingOrdSupplierId = null, editingOrdOrderId = null;
-const ORD_CATS = { equipment: 'ציוד', chemical: 'כימיקל', consumable: 'מתכלה' };
+const ORD_CATS = { equipment: 'ציוד', chemical: 'כימיקל', consumable: 'מתכלה', service: 'שירות' };
 const ORD_SUP_TYPES = { regular: 'ספק קבוע', aliexpress: 'אליאקספרס', other: 'אחר' };
 const ORD_CUR = { ILS: '₪', USD: '$', EUR: '€' };
 const ORD_PAY = { credit: 'אשראי', transfer: 'דרך חשבון', balance: 'יתרה קיימת' };
@@ -2166,7 +2167,7 @@ const RC_KEYS = {
   notes: ['הערות', 'notes']
 };
 let ordRc = null;
-const RC_TYPE_WORDS = ['ציוד', 'כימיקל', 'כימיקלים', 'מתכלה', 'מתכלים', 'equipment', 'chemical', 'chemicals', 'consumable', 'consumables'];
+const RC_TYPE_WORDS = ['ציוד', 'כימיקל', 'כימיקלים', 'מתכלה', 'מתכלים', 'שירות', 'שירותים', 'equipment', 'chemical', 'chemicals', 'consumable', 'consumables', 'service', 'services'];
 const RC_ICOLS = {
   name: ['שם', 'פריט', 'שם פריט', 'תיאור', 'name', 'item', 'description'],
   qty: ['כמות', 'qty', 'quantity'],
@@ -2179,6 +2180,7 @@ function rcCat(v) {
   v = String(v || '').toLowerCase();
   if (/כימיקל|chem/.test(v)) return 'chemical';
   if (/ציוד|equip/.test(v)) return 'equipment';
+  if (/שירות|service/.test(v)) return 'service';
   return 'consumable';
 }
 function rcParse(text) {
