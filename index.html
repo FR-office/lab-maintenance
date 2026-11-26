@@ -1530,6 +1530,10 @@ async function ordRun(fn, okMsg) {
   try { await fn(); if (okMsg) showToast(okMsg); return true; }
   catch (e) { console.error(e); showToast('שגיאה בשמירה, נסי שוב'); return false; }
 }
+// Newest order date first; ties broken by order number (higher first)
+function ordByDateDesc(a, b) {
+  return (b.date || '').localeCompare(a.date || '') || (b.number || 0) - (a.number || 0);
+}
 function ordOrderItems(orderId) { return Object.values(ordersData.items).filter(i => i.orderId === orderId); }
 
 window.setOrdersView = function (v) { ordersView = v; renderOrders(); };
@@ -1656,7 +1660,7 @@ function ordOrdersHtml() {
   const rcptF = document.getElementById('ord-f-rcpt').value;
   const payF = document.getElementById('ord-f-pay').value;
   const TOP = `<div class="btn-row"><button class="add-btn" onclick="openOrdRcpt()">🧾 הוספת הזמנה מקבלה</button><button class="add-btn" onclick="openOrdHist()">📥 ייבוא טבלה</button></div>`;
-  const orders = Object.values(ordersData.orders).sort((a, b) => (b.number || 0) - (a.number || 0)).filter(o => {
+  const orders = Object.values(ordersData.orders).sort(ordByDateDesc).filter(o => {
     const st = ordOrderStatus(o);
     const sup = ordersData.suppliers[o.supplierId];
     if (supF && o.supplierId !== supF) return false;
@@ -1881,7 +1885,7 @@ let ordAddIds = [];
 window.openAddToOrder = function () {
   const items = [...ordSelected].map(id => ordersData.items[id]).filter(i => i && i.status === 'needed');
   if (!items.length) return;
-  const orders = Object.values(ordersData.orders).sort((a, b) => (b.number || 0) - (a.number || 0));
+  const orders = Object.values(ordersData.orders).sort(ordByDateDesc);
   if (!orders.length) { showToast('אין עדיין הזמנות, יש ליצור הזמנה חדשה'); return; }
   lastFocusedEl = document.activeElement;
   ordAddIds = items.map(i => i.id);
@@ -2000,7 +2004,7 @@ window.ordExport = function () {
       'שולם': o.paid ? 'כן' : 'לא', 'אמצעי תשלום': ORD_PAY[o.paymentMethod] || '', 'תאריך תשלום': o.paymentDate || '', 'סכום כולל': o.total === '' || o.total == null ? '' : o.total, 'מטבע': o.total ? (ORD_CUR[o.currency || 'ILS'] || '') : '',
       'תאריך הזמנה': o.date || '', 'תאריך הגעה': i.arrivedDate || '', 'קישור': i.link, 'הערות': i.notes };
   });
-  const orderRows = Object.values(ordersData.orders).sort((a, b) => a.number - b.number).map(o => {
+  const orderRows = Object.values(ordersData.orders).sort((a, b) => ordByDateDesc(b, a)).map(o => {
     const st = ordOrderStatus(o);
     return { 'מספר הזמנה': o.number, 'ספק': supName(o.supplierId), 'תאריך': o.date, 'מס׳ הזמנה אצל הספק': o.supplierRef, 'סטטוס': st.label,
       'קבלה הועברה': o.receiptSent ? 'כן' : 'לא', 'מס׳ קבלה': o.receiptNumber || '',
@@ -2162,6 +2166,15 @@ const RC_KEYS = {
   notes: ['הערות', 'notes']
 };
 let ordRc = null;
+const RC_TYPE_WORDS = ['ציוד', 'כימיקל', 'כימיקלים', 'מתכלה', 'מתכלים', 'equipment', 'chemical', 'chemicals', 'consumable', 'consumables'];
+const RC_ICOLS = {
+  name: ['שם', 'פריט', 'שם פריט', 'תיאור', 'name', 'item', 'description'],
+  qty: ['כמות', 'qty', 'quantity'],
+  unit: ['יחידה', 'יחידות', 'unit'],
+  catalog: ['מקט', 'catalog', 'sku', 'part number'],
+  cat: ['סוג', 'קטגוריה', 'type', 'category']
+};
+function rcIsType(v) { return RC_TYPE_WORDS.includes(histNorm(v)); }
 function rcCat(v) {
   v = String(v || '').toLowerCase();
   if (/כימיקל|chem/.test(v)) return 'chemical';
@@ -2170,7 +2183,7 @@ function rcCat(v) {
 }
 function rcParse(text) {
   const head = { supplier: '', date: '', ref: '', receipt: '', method: '', payDate: '', notes: '', total: '', currency: '' };
-  const items = []; let inItems = false;
+  const items = []; let inItems = false; let imap = null, firstItem = true;
   for (const raw of text.split(/\r?\n/)) {
     const line = raw.trim(); if (!line) continue;
     if (/^-{3,}$/.test(line)) { inItems = true; continue; }
@@ -2181,8 +2194,26 @@ function rcParse(text) {
     }
     const cols = (line.includes('\t') ? line.split('\t') : line.includes('|') ? line.split('|') : line.split(';')).map(x => x.trim());
     if (!cols[0]) continue;
-    const q = parseFloat(String(cols[1] || '').replace(',', '.'));
-    items.push({ name: cols[0], qty: isNaN(q) ? 1 : q, unit: cols[2] || '', catalog: cols[3] || '', cat: rcCat(cols[4]) });
+    if (firstItem) {
+      firstItem = false;
+      const found = {};
+      cols.forEach((c, idx) => { const k = histNorm(c); for (const f in RC_ICOLS) if (found[f] === undefined && RC_ICOLS[f].includes(k)) { found[f] = idx; break; } });
+      if (found.name !== undefined && Object.keys(found).length >= 3) { imap = found; continue; }
+    }
+    let name, qtyRaw, unit, catalog, catText;
+    if (imap) {
+      const g = f => (imap[f] !== undefined && cols[imap[f]] !== undefined ? cols[imap[f]] : '');
+      name = g('name'); qtyRaw = g('qty'); unit = g('unit'); catalog = g('catalog'); catText = g('cat');
+    } else {
+      // The type word (ציוד / כימיקל / מתכלה) is recognised in any column from the third on,
+      // so a missing catalog-number column no longer pushes it into the wrong field.
+      const ti = cols.findIndex((x, i) => i >= 2 && rcIsType(x));
+      catText = ti > -1 ? cols.splice(ti, 1)[0] : (cols[4] || '');
+      name = cols[0]; qtyRaw = cols[1]; unit = cols[2] || ''; catalog = cols[3] || '';
+    }
+    if (!name) continue;
+    const q = parseFloat(String(qtyRaw || '').replace(',', '.'));
+    items.push({ name, qty: isNaN(q) ? 1 : q, unit, catalog, cat: rcCat(catText) });
   }
   return {
     date: histDate(head.date), supplier: head.supplier, ref: head.ref, receipt: head.receipt,
