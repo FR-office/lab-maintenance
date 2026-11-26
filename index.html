@@ -556,6 +556,10 @@ a:focus-visible,button:focus-visible,select:focus-visible,input:focus-visible,te
         <select id="oe-pay-method"><option value="">—</option><option value="credit">אשראי</option><option value="transfer">דרך חשבון</option><option value="balance">יתרה קיימת</option></select></div>
       <div class="form-group" style="flex:1"><label for="oe-pay-date">תאריך תשלום</label><input type="date" id="oe-pay-date"></div>
     </div>
+    <div style="display:flex;gap:10px">
+      <div class="form-group" style="flex:2"><label for="oe-total">סכום כולל (אופציונלי)</label><input type="number" id="oe-total" min="0" step="0.01" dir="ltr"></div>
+      <div class="form-group" style="flex:1"><label for="oe-cur">מטבע</label><select id="oe-cur"><option value="ILS">₪ שקל</option><option value="USD">$ דולר</option><option value="EUR">€ יורו</option></select></div>
+    </div>
     <div class="form-group"><label for="oe-notes">הערות (אופציונלי)</label><textarea id="oe-notes" rows="2"></textarea></div>
     <div class="modal-btns">
       <button class="btn-secondary" onclick="closeAllModals()">ביטול</button>
@@ -1505,6 +1509,7 @@ let ordCreateGroups = [];
 let editingOrdItemId = null, editingOrdSupplierId = null, editingOrdOrderId = null;
 const ORD_CATS = { equipment: 'ציוד', chemical: 'כימיקל', consumable: 'מתכלה' };
 const ORD_SUP_TYPES = { regular: 'ספק קבוע', aliexpress: 'אליאקספרס', other: 'אחר' };
+const ORD_CUR = { ILS: '₪', USD: '$', EUR: '€' };
 const ORD_PAY = { credit: 'אשראי', transfer: 'דרך חשבון', balance: 'יתרה קיימת' };
 const ORD_STATUS = { needed: 'נדרש', ordered: 'הוזמן', arrived: 'הגיע' };
 
@@ -1668,7 +1673,10 @@ function ordOrdersHtml() {
   if (!Object.keys(ordersData.orders).length)
     return TOP + `<div class="empty"><div class="empty-icon">📦</div>עדיין אין הזמנות. סמני פריטים ברשימה ולחצי ״צור הזמנות״.</div>`;
   if (!orders.length) return TOP + `<div class="empty">אין הזמנות שתואמות לחיפוש</div>`;
-  return TOP + orders.map(o => {
+  const sums = {};
+  orders.forEach(o => { if (o.total) { const c = o.currency || 'ILS'; sums[c] = (sums[c] || 0) + Number(o.total); } });
+  const SUM = Object.keys(sums).length ? `<div class="task-meta" style="margin:0 0 10px"><span>סה״כ בהזמנות המוצגות (${orders.length}): <strong>${Object.entries(sums).map(([c, v]) => oesc(ordMoney(v, c))).join(' · ')}</strong></span></div>` : '';
+  return TOP + SUM + orders.map(o => {
     const st = ordOrderStatus(o);
     const sup = ordersData.suppliers[o.supplierId];
     const lines = st.items.map(i => `<div class="order-line">
@@ -1682,6 +1690,7 @@ function ordOrdersHtml() {
         <div>
           <div class="order-title">הזמנה #${o.number} · ${sup ? oesc(sup.name) : 'ספק לא ידוע'}</div>
           <div class="task-meta" style="margin-top:4px"><span>${ordFmt(o.date)}</span>
+            ${o.total ? `<span>· סה״כ: <strong>${oesc(ordMoney(o.total, o.currency))}</strong></span>` : `<span style="color:#a0a0a0">· ללא סכום</span>`}
             ${o.supplierRef ? `<span>· מס׳ אצל הספק: <span dir="ltr">${oesc(o.supplierRef)}</span></span>` : ''}</div>
         </div>
         <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px">
@@ -1926,6 +1935,8 @@ window.openOrdEdit = function (id, payNow) {
   document.getElementById('oe-paid').checked = !!o.paid || !!payNow;
   document.getElementById('oe-pay-method').value = o.paymentMethod || '';
   document.getElementById('oe-pay-date').value = o.paymentDate || (payNow ? ordToday() : '');
+  document.getElementById('oe-total').value = o.total === '' || o.total == null ? '' : o.total;
+  document.getElementById('oe-cur').value = o.currency || 'ILS';
   document.getElementById('oe-desc-group').style.display = o.historical ? '' : 'none';
   document.getElementById('oe-desc').value = o.description || '';
   document.getElementById('ord-edit-modal').style.display = 'flex';
@@ -1937,6 +1948,8 @@ window.saveOrdEdit = async function () {
     supplierRef: document.getElementById('oe-ref').value.trim(),
     receiptSent: document.getElementById('oe-rcpt-sent').checked,
     receiptNumber: document.getElementById('oe-rcpt-num').value.trim(),
+    total: document.getElementById('oe-total').value === '' ? '' : Number(document.getElementById('oe-total').value),
+    currency: document.getElementById('oe-cur').value,
     paid: document.getElementById('oe-paid').checked,
     paymentMethod: document.getElementById('oe-paid').checked ? document.getElementById('oe-pay-method').value : '',
     paymentDate: document.getElementById('oe-paid').checked ? document.getElementById('oe-pay-date').value : '',
@@ -1984,14 +1997,14 @@ window.ordExport = function () {
     return { 'פריט': i.name, 'סוג': ORD_CATS[i.category] || '', 'כמות': i.qty, 'יחידה': i.unit, 'מק״ט': i.catalog, 'ספק': supName(i.supplierId),
       'סטטוס': ORD_STATUS[i.status] || '', 'מספר הזמנה': o.number || '', 'מס׳ הזמנה אצל הספק': o.supplierRef || '',
       'קבלה הועברה': o.receiptSent ? 'כן' : 'לא', 'מס׳ קבלה': o.receiptNumber || '',
-      'שולם': o.paid ? 'כן' : 'לא', 'אמצעי תשלום': ORD_PAY[o.paymentMethod] || '', 'תאריך תשלום': o.paymentDate || '',
+      'שולם': o.paid ? 'כן' : 'לא', 'אמצעי תשלום': ORD_PAY[o.paymentMethod] || '', 'תאריך תשלום': o.paymentDate || '', 'סכום כולל': o.total === '' || o.total == null ? '' : o.total, 'מטבע': o.total ? (ORD_CUR[o.currency || 'ILS'] || '') : '',
       'תאריך הזמנה': o.date || '', 'תאריך הגעה': i.arrivedDate || '', 'קישור': i.link, 'הערות': i.notes };
   });
   const orderRows = Object.values(ordersData.orders).sort((a, b) => a.number - b.number).map(o => {
     const st = ordOrderStatus(o);
     return { 'מספר הזמנה': o.number, 'ספק': supName(o.supplierId), 'תאריך': o.date, 'מס׳ הזמנה אצל הספק': o.supplierRef, 'סטטוס': st.label,
       'קבלה הועברה': o.receiptSent ? 'כן' : 'לא', 'מס׳ קבלה': o.receiptNumber || '',
-      'שולם': o.paid ? 'כן' : 'לא', 'אמצעי תשלום': ORD_PAY[o.paymentMethod] || '', 'תאריך תשלום': o.paymentDate || '',
+      'שולם': o.paid ? 'כן' : 'לא', 'אמצעי תשלום': ORD_PAY[o.paymentMethod] || '', 'תאריך תשלום': o.paymentDate || '', 'סכום כולל': o.total === '' || o.total == null ? '' : o.total, 'מטבע': o.total ? (ORD_CUR[o.currency || 'ILS'] || '') : '',
       'פריטים': o.historical ? (o.description || '') : st.items.map(i => `${i.name} (${i.qty} ${i.unit})`).join('; '), 'הערות': o.notes };
   });
   const wb = XLSX.utils.book_new();
@@ -2119,12 +2132,31 @@ window.ordImportConfirm = async function () {
   renderOrders();
 };
 
+// ── Money helpers ──
+function ordMoney(t, c) {
+  const sym = ORD_CUR[c || 'ILS'] || '₪';
+  return sym + Number(t).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+function ordParseMoney(v) {
+  v = String(v == null ? '' : v).trim();
+  if (!v) return { total: '', currency: 'ILS' };
+  const currency = /\$|usd|דולר/i.test(v) ? 'USD' : /€|eur|יורו/i.test(v) ? 'EUR' : 'ILS';
+  let n = v.replace(/[^\d.,-]/g, '');
+  const lc = n.lastIndexOf(','), ld = n.lastIndexOf('.');
+  if (lc > -1 && ld > -1) n = lc > ld ? n.replace(/\./g, '').replace(',', '.') : n.replace(/,/g, '');
+  else if (lc > -1) n = /,\d{1,2}$/.test(n) ? n.replace(',', '.') : n.replace(/,/g, '');
+  const x = parseFloat(n);
+  return { total: isNaN(x) ? '' : x, currency };
+}
+
 // ── Add an order from a receipt (text produced from a receipt photo) ──
 const RC_KEYS = {
   supplier: ['ספק', 'supplier'],
   date: ['תאריך', 'date'],
   ref: ['חשבונית', 'מספר חשבונית', 'הזמנה', 'מספר הזמנה', 'invoice', 'order'],
   receipt: ['קבלה', 'מספר קבלה', 'receipt'],
+  total: ['סכום', 'סכום כולל', 'סהכ', 'סהכ לתשלום', 'לתשלום', 'total', 'amount'],
+  currency: ['מטבע', 'currency'],
   method: ['תשלום', 'אמצעי תשלום', 'payment'],
   payDate: ['תאריך תשלום', 'payment date'],
   notes: ['הערות', 'notes']
@@ -2137,7 +2169,7 @@ function rcCat(v) {
   return 'consumable';
 }
 function rcParse(text) {
-  const head = { supplier: '', date: '', ref: '', receipt: '', method: '', payDate: '', notes: '' };
+  const head = { supplier: '', date: '', ref: '', receipt: '', method: '', payDate: '', notes: '', total: '', currency: '' };
   const items = []; let inItems = false;
   for (const raw of text.split(/\r?\n/)) {
     const line = raw.trim(); if (!line) continue;
@@ -2154,7 +2186,9 @@ function rcParse(text) {
   }
   return {
     date: histDate(head.date), supplier: head.supplier, ref: head.ref, receipt: head.receipt,
-    method: histMethod(head.method), payDate: histDate(head.payDate), notes: head.notes, items
+    method: histMethod(head.method), payDate: histDate(head.payDate), notes: head.notes, items,
+    total: ordParseMoney(head.total).total,
+    currency: head.currency ? ordParseMoney(head.currency + ' 0').currency : ordParseMoney(head.total).currency
   };
 }
 window.openOrdRcpt = function () {
@@ -2197,6 +2231,8 @@ function ordRcptRender() {
         <input style="flex:1 1 130px" dir="ltr" aria-label="מספר חשבונית" placeholder="מס׳ חשבונית/הזמנה" value="${oesc(r.ref)}" oninput="ordRc.ref=this.value"></div>
       <div class="imp-row"><input style="flex:1 1 120px" dir="ltr" aria-label="מספר קבלה" placeholder="מס׳ קבלה" value="${oesc(r.receipt)}" oninput="ordRc.receipt=this.value">
         ${methodSel}<input type="date" aria-label="תאריך תשלום" value="${oesc(r.payDate)}" onchange="ordRc.payDate=this.value"></div>
+      <div class="imp-row"><input style="flex:2 1 140px" type="number" step="0.01" dir="ltr" aria-label="סכום כולל" placeholder="סכום כולל" value="${oesc(r.total)}" oninput="ordRc.total=this.value===''?'':Number(this.value)">
+        <select aria-label="מטבע" style="width:110px" onchange="ordRc.currency=this.value">${Object.entries(ORD_CUR).map(([k, v]) => `<option value="${k}" ${r.currency === k ? 'selected' : ''}>${v}</option>`).join('')}</select></div>
       <div class="imp-row"><input style="flex:1 1 100%" aria-label="הערות" placeholder="הערות" value="${oesc(r.notes)}" oninput="ordRc.notes=this.value"></div>
     </div>
     <div class="imp-box" style="max-height:34vh">` + r.items.map((i, k) => `<div class="imp-row">
@@ -2227,6 +2263,7 @@ window.ordRcptConfirm = async function () {
   const number = Object.values(ordersData.orders).reduce((mx, o) => Math.max(mx, o.number || 0), 0) + 1;
   const oid = ordNewId('o'); const now = Date.now();
   const order = { id: oid, number, supplierId: sup.id, date: r.date, supplierRef: (r.ref || '').trim(), notes: (r.notes || '').trim(),
+    total: r.total === '' || r.total == null ? '' : Number(r.total), currency: r.currency || 'ILS',
     receiptSent: document.getElementById('rc-sent').checked, receiptNumber: (r.receipt || '').trim(),
     paid: !!(r.method || r.payDate), paymentMethod: r.method || '', paymentDate: r.payDate || '', createdAt: now };
   const ok = await ordRun(() => Promise.all([
@@ -2253,9 +2290,10 @@ const HIST_HEADERS = {
   ref: ['מספר הזמנה', 'מס הזמנה', 'מספר חשבונית', 'חשבונית', 'הזמנה', 'order', 'order no', 'order number', 'invoice', 'invoice no'],
   receipt: ['מספר קבלה', 'מס קבלה', 'קבלה', 'receipt', 'receipt no', 'receipt number'],
   method: ['אמצעי תשלום', 'אופן תשלום', 'תשלום', 'שולם ב', 'payment', 'payment method', 'method'],
-  payDate: ['תאריך תשלום', 'תאריך חיוב', 'payment date', 'paid on', 'paid date']
+  payDate: ['תאריך תשלום', 'תאריך חיוב', 'payment date', 'paid on', 'paid date'],
+  total: ['סכום', 'סכום כולל', 'סהכ', 'לתשלום', 'total', 'amount']
 };
-const HIST_DEFAULT = { date: 0, supplier: 1, desc: 2, ref: 3, receipt: 4, method: 5, payDate: 6 };
+const HIST_DEFAULT = { date: 0, supplier: 1, desc: 2, ref: 3, receipt: 4, method: 5, payDate: 6, total: 7 };
 let ordHistRows = [];
 function histNorm(x) { return String(x || '').toLowerCase().replace(/[׳'"״`.:]/g, '').replace(/\s+/g, ' ').trim(); }
 function histCsv(line) {
@@ -2310,7 +2348,7 @@ function histParse(text) {
     const g = f => (map[f] !== undefined && cols[map[f]] !== undefined ? cols[map[f]] : '');
     const method = histMethod(g('method'));
     return { date: histDate(g('date')), supplier: g('supplier'), desc: g('desc'), ref: g('ref'), receipt: g('receipt'),
-      method, payDate: histDate(g('payDate')) };
+      method, payDate: histDate(g('payDate')), ...ordParseMoney(g('total')) };
   }).filter(r => r.date || r.supplier || r.desc || r.ref || r.receipt);
 }
 window.openOrdHist = function () {
@@ -2345,7 +2383,8 @@ function ordHistRender() {
       <div class="imp-row"><input style="flex:1 1 110px" dir="ltr" aria-label="מספר קבלה" value="${oesc(r.receipt)}" placeholder="מס׳ קבלה" oninput="ordHistRows[${i}].receipt=this.value">
         <select aria-label="אמצעי תשלום" style="width:130px" onchange="ordHistRows[${i}].method=this.value"><option value="">לא שולם / לא ידוע</option>
           <option value="credit" ${r.method === 'credit' ? 'selected' : ''}>אשראי</option><option value="transfer" ${r.method === 'transfer' ? 'selected' : ''}>דרך חשבון</option><option value="balance" ${r.method === 'balance' ? 'selected' : ''}>יתרה קיימת</option></select>
-        <input type="date" aria-label="תאריך תשלום" value="${oesc(r.payDate)}" onchange="ordHistRows[${i}].payDate=this.value"></div>
+        <input type="date" aria-label="תאריך תשלום" value="${oesc(r.payDate)}" onchange="ordHistRows[${i}].payDate=this.value">
+        <input style="width:110px" type="number" step="0.01" dir="ltr" aria-label="סכום כולל" placeholder="סכום" value="${oesc(r.total)}" oninput="ordHistRows[${i}].total=this.value===''?'':Number(this.value)"></div>
     </div>`).join('') + `</div>`;
   ordHistHint();
 }
@@ -2373,6 +2412,7 @@ window.ordHistConfirm = async function () {
   sorted.forEach((r, k) => {
     const sup = supFor(r.supplier);
     const o = { id: ordNewId('o'), number: 0, supplierId: sup.id, date: r.date, supplierRef: (r.ref || '').trim(), notes: '', description: (r.desc || '').trim(),
+      total: r.total === '' || r.total == null ? '' : Number(r.total), currency: r.currency || 'ILS',
       historical: true, receiptSent: !!(r.receipt || '').trim(), receiptNumber: (r.receipt || '').trim(),
       paid: !!(r.method || r.payDate), paymentMethod: r.method || '', paymentDate: r.payDate || '', createdAt: now + k };
     const sg = sig(o);
